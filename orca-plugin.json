@@ -1,0 +1,62 @@
+{
+  "manifestVersion": 2,
+  "id": "artifact-workbench",
+  "name": "Latest Artifacts / 最新产物",
+  "version": "0.1.0",
+  "description": "Recent files from your current agent session. Local macOS preview release.",
+  "engines": {
+    "orca": ">=1.4.257"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.mjs",
+  "contributes": {
+    "panels": [
+      {
+        "id": "artifact-workbench",
+        "title": "Latest artifacts / 最新产物",
+        "icon": "layers",
+        "entry": "src/panel.html"
+      }
+    ],
+    "events": [
+      {
+        "on": "workspace.changed"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:read"
+    }
+  ],
+  "repository": "https://github.com/xuan666-lab/orca-latest-artifacts",
+  "homepage": "https://github.com/xuan666-lab/orca-latest-artifacts",
+  "author": {
+    "name": "xuan666-lab",
+    "url": "https://github.com/xuan666-lab"
+  },
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "screenshots": [
+    {
+      "path": "assets/preview-en.png",
+      "alt": "Latest Artifacts list in English with synthetic example files",
+      "caption": "English UI — synthetic demo data"
+    },
+    {
+      "path": "assets/preview-zh.png",
+      "alt": "最新产物中文界面，使用合成演示文件",
+      "caption": "中文界面 · 演示数据"
+    }
+  ]
+}

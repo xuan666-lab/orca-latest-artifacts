@@ -1,0 +1,20 @@
+name: Check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Optional media renderers for integration tests
+        run: |
+          brew install ffmpeg poppler
+          if [ ! -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+            brew install --cask google-chrome
+          fi
+      - name: Tests
+        run: npm test

@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="./panel.css" />
+  </head>
+  <body>
+    <header>
+      <h1>最新产物</h1>
+      <select id="tasks" aria-label="当前任务"></select>
+      <details id="settings">
+        <summary aria-label="任务设置">⋯</summary>
+        <section class="settings-body">
+          <div id="scope" class="muted"></div>
+          <div class="toolbar">
+            <button id="follow">跟随当前会话</button>
+            <button id="directory">目录发现</button>
+            <button id="refresh">核对文件</button
+            ><button id="import">导入已有</button
+            ><button id="end">结束收集</button
+            ><button id="layout">切换画廊</button>
+          </div>
+          <section id="directory-config">
+            <hr />
+            <strong>新建目录任务</strong>
+            <select id="workspace" aria-label="关联工作区">
+              <option value="">选择本机工作区</option>
+            </select>
+            <button id="associate">关联到当前任务</button>
+            <input id="name" placeholder="任务名" aria-label="任务名" />
+            <textarea
+              id="roots"
+              placeholder="限定输出目录，每行一个"
+              aria-label="输出目录"
+            ></textarea>
+            <p class="muted">
+              仅收集这些目录的新增和更新文件。目录发现不代表由当前聊天生成。
+            </p>
+            <button id="start" class="primary">开始收集</button>
+          </section>
+        </section>
+      </details>
+    </header>
+    <p id="view-caption" class="muted">当前会话最近一次生成的产物</p>
+    <div class="filters">
+      <input id="search" placeholder="搜索产物" aria-label="搜索" /><select
+        id="filter"
+        aria-label="文件类型"
+      >
+        <option value="全部">全部</option>
+        <option value="HTML">HTML</option>
+        <option value="图片">图片</option>
+        <option value="PDF">PDF</option>
+        <option value="Markdown">Markdown</option>
+        <option value="表格">表格</option>
+        <option value="视频">视频</option>
+      </select>
+    </div>
+    <div id="error" role="alert"></div>
+    <div id="warnings" class="muted" role="status"></div>
+    <main id="cards" class="list"></main>
+    <footer class="pagination">
+      <span id="page-count" class="muted" role="status" hidden></span>
+      <button id="load-more" type="button" hidden>加载更多</button>
+    </footer>
+    <script type="module" src="./panel.js"></script>
+  </body>
+</html>
