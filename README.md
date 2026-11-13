@@ -1,6 +1,6 @@
 # Latest Artifacts for Orca
 
-Find the files your current agent session produced, without searching its transcript.
+**Switch to an agent and see its latest deliverables—without digging through chat history or mixing in files from other sessions.**
 
 [简体中文](README.zh-CN.md)
 
