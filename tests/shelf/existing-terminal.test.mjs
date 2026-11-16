@@ -254,3 +254,18 @@ test('bounded initial scan retains artifacts before the final window and rebuild
     assert.deepEqual(result.evidence.map(x=>x.path),[artifact]);
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('terminal writes beside the workspace (under home) count; hidden home dirs and outside mentions do not', async () => {
+  const base=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-home-'))),
+    project=path.join(base,'project'),transcript=path.join(base,'S.jsonl'),oldHome=process.env.HOME;
+  await fs.mkdir(project);process.env.HOME=base;
+  const write=(id,file)=>line({type:'assistant',sessionId:'S',uuid:'a'+id,timestamp:'2026-11-12T01:00:00Z',message:{content:[{type:'tool_use',id,name:'Write',input:{file_path:file}}]}})
+    +line({type:'user',sessionId:'S',uuid:'u'+id,timestamp:'2026-11-12T01:00:01Z',message:{content:[{type:'tool_result',tool_use_id:id}]}});
+  try{
+    const beside=path.join(base,'other','r.md'),hidden=path.join(base,'.claude','x.md'),mentioned=path.join(base,'other','m.md');
+    await fs.writeFile(transcript,write('t1',beside)+write('t2',hidden)+line(declaration('d',mentioned)));
+    let result=await readClaudeTail({sessionId:'S',transcript},project,null);
+    for(let i=0;result.loading&&i<100;i++)result=await readClaudeTail({sessionId:'S',transcript},project,result.cache);
+    assert.deepEqual(result.evidence.map(x=>x.path),[beside]);
+  }finally{process.env.HOME=oldHome;await fs.rm(base,{recursive:true,force:true});}
+});

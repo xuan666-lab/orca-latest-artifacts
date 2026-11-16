@@ -296,3 +296,50 @@ test('switching during evidence verification never publishes the old session', a
     assert.equal((await shelf.action()).tasks[0].sourceSession.id,'B');
   }finally{await shelf.dispose();await f.close();}
 });
+
+test("artifacts written outside the workspace but under home are listed and marked; hidden home dirs stay excluded", async () => {
+  const f = await fixture(),
+    values = new Map(),
+    home = await fs.mkdtemp(path.join(path.dirname(f.root), "home-")),
+    oldHome = process.env.HOME;
+  process.env.HOME = await fs.realpath(home);
+  const host = {
+    storage: {
+      get: async (k) => structuredClone(values.get(k)),
+      set: async (k, v) => values.set(k, structuredClone(v)),
+      delete: async (k) => values.delete(k),
+    },
+    host: { call: async () => ({ workspaces: [f.workspace] }) },
+    panels: { post: () => {} },
+    log: () => {},
+  };
+  const shelf = createShelf(host, {
+    sessions: true,
+    sessionOptions: { paths: f.paths, registrationDirectory: path.join(f.root, "registrations") },
+    stableMs: 1,
+  });
+  try {
+    const inside = path.join(f.root, "in.md"),
+      outside = path.join(process.env.HOME, "other", "report.md"),
+      hidden = path.join(process.env.HOME, ".secret", "key.md");
+    await fs.mkdir(path.dirname(outside));
+    await fs.mkdir(path.dirname(hidden));
+    for (const p of [inside, outside, hidden]) await fs.writeFile(p, "x");
+    f.session("A");
+    [inside, outside, hidden].forEach((p, i) =>
+      f.item("A", "w" + i, i + 1, { kind: "diff", path: p, patch: { head: "", truncated: false } }));
+    f.current("A");
+    const items = (await shelf.action()).tasks[0].items;
+    assert.deepEqual(Object.keys(items).sort(), [inside, outside].sort());
+    assert.equal(items[inside].outside, undefined);
+    assert.equal(items[outside].outside, true);
+    assert.equal(items[outside].relative, path.join("other", "report.md"));
+    // Outside files must stay openable/previewable through the same scope check.
+    assert.equal((await shelf.action({ action: "preview", path: outside })).reason === "产物已切换或不可用", false);
+  } finally {
+    process.env.HOME = oldHome;
+    shelf.dispose();
+    await f.close();
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});

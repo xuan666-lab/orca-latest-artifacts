@@ -101,6 +101,7 @@ summary::-webkit-details-marker {
 }
 .filters select {
   width: 80px;
+  flex: none;
 }
 .muted {
   font-size: 11px;

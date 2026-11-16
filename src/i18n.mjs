@@ -59,6 +59,14 @@ export const MESSAGES = {
   unavailable: ["暂时无法访问", "Temporarily unavailable"],
   changed: ["交付后有更新", "Changed after delivery"],
   delivered: ["✓ 已交付", "✓ Delivered"],
+  sortLabel: ["排序", "Sort"],
+  newestFirst: ["最新在前", "Newest first"],
+  oldestFirst: ["最早在前", "Oldest first"],
+  outsideWorkspace: ["工作区外", "Outside workspace"],
+  readingSession: [
+    "正在读取会话记录，长会话首次需要几秒…",
+    "Reading the session history; long sessions take a few seconds the first time…",
+  ],
   emptySession: [
     "当前会话暂无可核实的写入或登记产物",
     "No verified writes or registered artifacts in this session",

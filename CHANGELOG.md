@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Show verified writes outside the workspace but under your home folder, marked "Outside workspace" with a `~/` path. Hidden folders (such as `~/.ssh`, `~/.claude`) stay excluded; files merely mentioned in a final answer still count only inside the workspace. Session caches rebuild once.
+- Show each artifact's modified time and sort by time (newest first by default, oldest first on request).
+- Say "Reading the session history" instead of an empty list while a long session is indexed for the first time.
+
 ## 0.1.1
 
 - Index existing Claude terminal histories from the beginning in bounded batches, so older artifact writes remain discoverable in long sessions.

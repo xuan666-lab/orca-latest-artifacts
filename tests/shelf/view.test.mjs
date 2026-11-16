@@ -17,3 +17,9 @@ test('paginated projection keeps complete latest turn searchable without sending
   assert.equal(shelfView(state,{search:'文件1.',kind:'HTML'}).pagination.total,1);
   const changed=shelfView({...state,revision:8},{offset:100,expectedTaskId:'session:A',expectedRevision:7});assert.equal(changed.pagination.offset,0);assert.equal(changed.pagination.reset,true);
 });
+test('artifacts sort by time, newest first by default, oldest first on request, regardless of delivered/outside flags',()=>{
+  const items={'/p/a.md':{...item('/p/a.md',1),delivered:'h'},'/p/b.md':item('/p/b.md',3),'/p/c.md':{...item('/p/c.md',2),outside:true}};
+  const state={mode:'directory',tasks:[{id:'d',name:'d',roots:['/p'],items}],active:'d'};
+  assert.deepEqual(Object.keys(shelfView(state).tasks[0].items),['/p/b.md','/p/c.md','/p/a.md']);
+  assert.deepEqual(Object.keys(shelfView(state,{order:'asc'}).tasks[0].items),['/p/a.md','/p/c.md','/p/b.md']);
+});

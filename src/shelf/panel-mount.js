@@ -33,7 +33,7 @@ export function mount(root, api, host) {
   const $ = (id) => document.getElementById(id);
 
   function query() {
-    return { search: $("search").value.trim(), kind: $("filter").value || "全部" };
+    return { search: $("search").value.trim(), kind: $("filter").value || "全部", order: $("order").value };
   }
   function pageControls() {
     const pagination = state.pagination;
@@ -193,6 +193,7 @@ export function mount(root, api, host) {
     const meta = document.createElement("span");
     meta.className = "meta";
     meta.textContent =
+      (file.outside ? ui("工作区外", orca.locale) + " · " : "") +
       ui(file.kind, orca.locale) +
       " · " +
       (file.sourceEvidence
@@ -201,7 +202,13 @@ export function mount(root, api, host) {
           : file.sourceEvidence.kind === "session-registration"
             ? ui("会话登记", orca.locale)
             : ui("工具写入", orca.locale)
-        : new Date(file.mtime).toLocaleDateString());
+        : "") +
+      (file.mtime
+        ? (file.sourceEvidence ? " · " : "") +
+          new Date(file.mtime).toLocaleString(orca.locale, {
+            month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+          })
+        : "");
     meta.title =
       (file.sourceEvidence?.kind === "session-delivery"
         ? ui("助手在该会话明确列为交付文件，未核实工具写入。", orca.locale)
@@ -209,10 +216,10 @@ export function mount(root, api, host) {
       ui("打开当前磁盘版本；更新于 ", orca.locale) +
       new Date(file.mtime).toLocaleString();
     main.append(preview, name);
-    if (duplicateName) {
+    if (duplicateName || file.outside) {
       const location = document.createElement("span");
       location.className = "location";
-      location.textContent = file.relative;
+      location.textContent = (file.outside ? "~/" : "") + file.relative;
       main.append(location);
     }
     main.append(meta);
@@ -319,7 +326,7 @@ export function mount(root, api, host) {
     $("import").hidden = state.mode === "session";
     $("end").hidden = state.mode === "session";
     $("scope").textContent = task
-      ? `${task.ended ? ui("已结束自动收集", orca.locale) : ui("正在收集", orca.locale)}\n${task.roots.join("\n")}\n${task.workspace?.name || ui("未关联工作区", orca.locale)}`
+      ? `${task.ended ? ui("已结束自动收集", orca.locale) : ui("正在收集", orca.locale)}\n${(state.mode === "session" ? task.roots.slice(0, 1) : task.roots).join("\n")}\n${task.workspace?.name || ui("未关联工作区", orca.locale)}`
       : ui("请选择限定输出目录", orca.locale);
     $("warnings").textContent = [
       ...(task?.errors || []).map((e) => e.message),
@@ -338,10 +345,7 @@ export function mount(root, api, host) {
           f.path.toLowerCase().includes($("search").value.toLowerCase()) &&
           ($("filter").value === "全部" || f.kind === $("filter").value),
       )
-      .sort(
-        (a, b) =>
-          Number(!!b.delivered) - Number(!!a.delivered) || b.mtime - a.mtime,
-      );
+      .sort((a, b) => ($("order").value === "asc" ? a.mtime - b.mtime : b.mtime - a.mtime));
     const nameCounts = new Map();
     for (const file of Object.values(task?.items || {})) {
       const basename = file.path.split(/[\\/]/).at(-1);
@@ -360,7 +364,9 @@ export function mount(root, api, host) {
         (query().search || query().kind !== "全部")
           ? t("noMatchingArtifacts", orca.locale)
           : state.mode === "session"
-          ? state.terminalStatus === "untracked"
+          ? state.sessionLoading
+            ? ui("正在读取会话记录，长会话首次需要几秒…", orca.locale)
+            : state.terminalStatus === "untracked"
             ? ui("此终端尚未接入产物追踪", orca.locale)
             : t(task && state.viewScope === "latest-productive" ? "noProductive" : "emptySession", orca.locale)
           : task
@@ -407,6 +413,7 @@ export function mount(root, api, host) {
   $("tasks").onchange = () => call({ action: "switch", id: $("tasks").value });
   $("search").oninput = () => filterChanged(true);
   $("filter").onchange = () => filterChanged();
+  $("order").onchange = () => filterChanged();
   $("load-more").onclick = () => loadPage(true);
   $("layout").onclick = () => {
     $("layout").textContent = $("cards").classList.toggle("list")

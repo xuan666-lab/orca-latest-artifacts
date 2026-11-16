@@ -2,7 +2,7 @@ import { latestProductiveArtifacts } from './latest-artifacts.mjs';
 const MAX_VIEW_BYTES = 768 * 1024;
 const pick = (value, keys) => Object.fromEntries(keys.filter(k => value?.[k] !== undefined).map(k => [k, value[k]]));
 const itemView = file => ({
-  ...pick(file, ['path','relative','kind','mtime','size','signature','source','missing','unavailable','changed','delivered']),
+  ...pick(file, ['path','relative','outside','kind','mtime','size','signature','source','missing','unavailable','changed','delivered']),
   ...(file.sourceEvidence ? {sourceEvidence:pick(file.sourceEvidence,['kind','relation'])} : {}),
 });
 function taskView(task, active) {
@@ -26,7 +26,7 @@ export function shelfView(state, query = {}) {
   const kind = typeof query.kind === 'string' ? query.kind : '';
   const matches = Object.values(selected?.items || task?.items || {})
     .filter(file => file.path.toLowerCase().includes(search) && (!kind || kind==='全部' || file.kind===kind))
-    .sort((a,b)=>Number(!!b.delivered)-Number(!!a.delivered) || b.mtime-a.mtime || a.path.localeCompare(b.path));
+    .sort((a,b)=>(query.order==='asc'?a.mtime-b.mtime:b.mtime-a.mtime) || a.path.localeCompare(b.path));
   const reset = (query.expectedTaskId != null && query.expectedTaskId !== active) ||
     (query.expectedRevision != null && query.expectedRevision !== (state.revision || 0));
   let offset = !reset && Number.isSafeInteger(query.offset) && query.offset >= 0 ? query.offset : 0;
