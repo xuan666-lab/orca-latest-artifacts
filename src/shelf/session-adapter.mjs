@@ -460,7 +460,7 @@ export async function readEvidence(paths, session, previous) {
     if (epoch.format !== 3 || epoch.prefix_seq !== 0)
       throw Error("此会话 outcome/prefix 格式未适配，自动归属已关闭");
     const reusable =
-      previous?.readerVersion === 5 &&
+      previous?.readerVersion === 4 &&
       previous?.generation === epoch.generation &&
       previous?.epoch === epoch.epoch &&
       previous.through <= epoch.through_seq;
@@ -524,12 +524,15 @@ export async function readEvidence(paths, session, previous) {
             !path.isAbsolute(session.projectPath || "")
           )
             return [];
-          const file = path.resolve(session.projectPath, proof.path);
-          // Same bounds as scopedArtifact: the workspace, else home (hidden dirs excluded below).
-          const root = [session.projectPath, os.homedir()].find((r) =>
-              file.startsWith(r + path.sep)),
-            relative = root ? path.relative(root, file) : "";
-          if (!relative) return [];
+          const file = path.resolve(session.projectPath, proof.path),
+            relative = path.relative(session.projectPath, file);
+          if (
+            !relative ||
+            relative.startsWith(".." + path.sep) ||
+            relative === ".." ||
+            path.isAbsolute(relative)
+          )
+            return [];
           if (
             relative
               .split(path.sep)
@@ -575,7 +578,7 @@ export async function readEvidence(paths, session, previous) {
       .all(epoch.generation, progress.targetThrough, progress.targetThrough);
     const cache = {
       turns,
-      readerVersion: 5,
+      readerVersion: 4,
       entryTurns,
       deliveryTurns,
       generation: epoch.generation,

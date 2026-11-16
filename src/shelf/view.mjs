@@ -2,7 +2,7 @@ import { latestProductiveArtifacts } from './latest-artifacts.mjs';
 const MAX_VIEW_BYTES = 768 * 1024;
 const pick = (value, keys) => Object.fromEntries(keys.filter(k => value?.[k] !== undefined).map(k => [k, value[k]]));
 const itemView = file => ({
-  ...pick(file, ['path','relative','outside','kind','mtime','size','signature','source','missing','unavailable','changed','delivered']),
+  ...pick(file, ['path','relative','kind','mtime','size','signature','source','missing','unavailable','changed','delivered']),
   ...(file.sourceEvidence ? {sourceEvidence:pick(file.sourceEvidence,['kind','relation'])} : {}),
 });
 function taskView(task, active) {

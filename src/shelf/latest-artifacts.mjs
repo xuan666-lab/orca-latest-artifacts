@@ -1,9 +1,14 @@
+// An artifact is what the agent handed over (final-answer delivery or registration);
+// plain tool writes are working files and stay out of the list.
+const DELIVERED = ["session-registration", "session-delivery"];
+const delivered = (item) =>
+  [...(item?.evidence || []), item?.sourceEvidence].some((e) => DELIVERED.includes(e?.kind));
 /** Select by verified turn identities, never by file mtime or a recent-session guess. */
 export function latestProductiveArtifacts(task) {
   if (!task) return { items: {}, turn: null, scope: "no-session" };
   if (task.terminalSource || !Array.isArray(task.turns))
     return {
-      items: task.items || {},
+      items: Object.fromEntries(Object.entries(task.items || {}).filter(([, item]) => delivered(item))),
       turn: null,
       scope: "session-unconfirmed",
     };
@@ -15,9 +20,7 @@ export function latestProductiveArtifacts(task) {
     ].filter(Boolean)) {
       if (
         !evidence.turnItemId ||
-        !["tool-write", "session-registration", "session-delivery"].includes(
-          evidence.kind,
-        )
+        !DELIVERED.includes(evidence.kind)
       )
         continue;
       if (!byTurn.has(evidence.turnItemId))

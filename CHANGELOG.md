@@ -2,7 +2,7 @@
 
 ## 0.1.2
 
-- Show verified writes outside the workspace but under your home folder, marked "Outside workspace" with a `~/` path. Hidden folders (such as `~/.ssh`, `~/.claude`) stay excluded; files merely mentioned in a final answer still count only inside the workspace. Session caches rebuild once.
+- List only what the agent actually handed over: paths in a completed final answer, or verified registrations. Files merely written or edited along the way are no longer shown.
 - Show each artifact's modified time and sort by time (newest first by default, oldest first on request).
 - Say "Reading the session history" instead of an empty list while a long session is indexed for the first time.
 

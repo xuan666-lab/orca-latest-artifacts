@@ -1,6 +1,5 @@
 import { existingClaudeTerminal } from "./existing-terminal.mjs";
 import { liveTerminals, trackedTerminal } from "./terminal-tracking.mjs";
-import os from "node:os";
 import { exactWorkspace } from "./workspaces.mjs";
 import {
   profilePaths,
@@ -106,8 +105,7 @@ export function createSessionCatalog(orca, options = {}) {
           options.registrationDirectory,
         );
       }
-      // Agents often write next to the workspace; home is the outer bound (hidden dirs stay excluded).
-      const roots = [session.projectPath, os.homedir()];
+      const roots = [session.projectPath];
       const storeKey =
         session.surface === "terminal"
           ? "terminal.task.v1." + session.provider + "." + session.id
@@ -185,7 +183,8 @@ export function createSessionCatalog(orca, options = {}) {
             observed(a.evidence) - observed(b.evidence) ||
             (a.evidence.sequence || 0) - (b.evidence.sequence || 0),
         );
-        const latest = proofs.at(-1),
+        // Label by the hand-over, not by a later working write to the same file.
+        const latest = proofs.filter((p) => p.evidence.kind !== "tool-write").at(-1) || proofs.at(-1),
           prior = old?.items?.[p];
         const contentHash =
           latest.registeredSignature === file.signature
@@ -196,7 +195,6 @@ export function createSessionCatalog(orca, options = {}) {
         task.items[p] = {
           ...prior,
           ...file,
-          ...(file.root !== session.projectPath ? { outside: true } : {}),
           size: file.size ?? prior?.size ?? 0,
           mtime: file.mtime ?? prior?.mtime ?? observed(latest.evidence),
           contentHash,

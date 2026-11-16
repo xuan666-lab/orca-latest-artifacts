@@ -28,8 +28,8 @@ test('large native history preserves the full index and latest productive round 
     const file=path.join(f.root,'结果🙂.html');await fs.writeFile(file,'<h1>Report</h1>');
     for(let i=1;i<=3500;i++)f.item('A','write-'+i,i,{kind:'diff',path:file,patch:{head:'not exported',truncated:false}});
     const latest=path.join(f.root,'latest.md');await fs.writeFile(latest,'# Latest');
-    f.item('A','latest-turn',3501,{kind:'turn',state:'completed',outcome:'success'});
-    f.item('A','latest-write',3502,{kind:'diff',path:latest,patch:{head:'not exported',truncated:false}});
+    f.item('A',JSON.stringify('latest-turn'),3501,{kind:'turn',state:'completed',outcome:'success'},{itemId:'latest-turn'});
+    f.deliver('A','latest-write',3502,[latest]);
     f.journal.prepare("UPDATE journal_outcomes SET value_json=json_set(value_json,'$.turnScope.turnItemId','latest-turn') WHERE entry_key='latest-write'").run();
     f.item('A','empty-turn',3503,{kind:'turn',state:'completed',outcome:'success'});
     shelf=start();let view=await shelf.action();
@@ -39,7 +39,7 @@ test('large native history preserves the full index and latest productive round 
     assert.equal(view.productiveTurn.id,'latest-turn');
     assert.ok(Buffer.byteLength(JSON.stringify(view))<256*1024);
     const stored=await createChunkedStorage(raw).get('session.cursor.v1.A');
-    assert.equal(Object.keys(stored.entries).length,3501);
+    assert.equal(Object.keys(stored.entries).length,3500);
     assert.ok(Buffer.byteLength(JSON.stringify(stored))>256*1024);
     assert.equal((await createChunkedStorage(raw).get('shelf')).sessionTask,undefined);
     await shelf.dispose();shelf=start();view=await shelf.action();
@@ -52,7 +52,7 @@ test('quota failures do not blank the current list or report user edits as saved
   const f=await fixture(),raw=hostStore();let shelf;
   try{
     f.session('A');f.current('A');const file=path.join(f.root,'a.md');await fs.writeFile(file,'# A');
-    f.item('A','w',1,{kind:'diff',path:file,patch:{head:'private',truncated:false}});
+    f.item('A','w',1,{kind:'diff',path:file,patch:{head:'private',truncated:false}});f.deliver('A','d',2,[file]);
     raw.set=async()=>{throw Error('host total storage limit');};
     shelf=createShelf({storage:createChunkedStorage(raw),host:{call:async()=>({workspaces:[f.workspace]})},panels:{post(){}},log(){}},{sessions:true,sessionOptions:{paths:f.paths,registrationDirectory:path.join(f.root,'registrations')}});
     const view=await shelf.action();

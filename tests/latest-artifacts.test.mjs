@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { latestProductiveArtifacts } from "../src/shelf/latest-artifacts.mjs";
 const item = (turn, extra = {}) => ({
   path: "/p/" + turn + ".md",
-  sourceEvidence: { kind: "tool-write", turnItemId: turn },
+  sourceEvidence: { kind: "session-delivery", turnItemId: turn },
   ...extra,
 });
 test("a nonproductive latest question retains the most recent productive completed turn; next productive turn replaces it", () => {
@@ -51,4 +51,18 @@ test("failed turns, unknown turn registrations and other sessions do not mix int
       .scope,
     "session-unconfirmed",
   );
+});
+test("only delivered or registered files are artifacts; plain tool writes never show or select a turn", () => {
+  const write = (turn) => ({ path: "/p/w" + turn, sourceEvidence: { kind: "tool-write", turnItemId: turn }, evidence: [{ kind: "tool-write", turnItemId: turn }] });
+  const both = { path: "/p/both", sourceEvidence: { kind: "tool-write", turnItemId: "A" }, evidence: [{ kind: "tool-write", turnItemId: "A" }, { kind: "session-delivery", turnItemId: "A" }] };
+  const native = {
+    turns: [
+      { id: "A", sequence: 1, state: "completed", outcome: "success" },
+      { id: "B", sequence: 2, state: "completed", outcome: "success" },
+    ],
+    items: { a: item("A"), both, wa: write("A"), wb: write("B") },
+  };
+  assert.deepEqual(Object.keys(latestProductiveArtifacts(native).items).sort(), ["a", "both"]);
+  const terminal = { terminalSource: true, items: { d: item("A"), w: write("A") } };
+  assert.deepEqual(Object.keys(latestProductiveArtifacts(terminal).items), ["d"]);
 });

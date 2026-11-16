@@ -43,6 +43,8 @@ test("default session gallery follows A/B, clears on non-session focus, preserve
       path: q,
       patch: { head: "PRIVATE PATCH BODY", truncated: false },
     });
+    f.deliver("A", "Adeliver", 2, [p]);
+    f.deliver("B", "Bdeliver", 2, [q]);
     f.current("A");
     let view = await shelf.action();
     assert.equal(view.mode, "session");
@@ -70,7 +72,7 @@ test("default session gallery follows A/B, clears on non-session focus, preserve
     f.current("A");
     view = await shelf.action({ action: "mode", mode: "session" });
     assert.equal(view.tasks[0].sourceSession.id, "A");
-    assert.equal(view.tasks[0].items[p].source, "工具成功写入");
+    assert.equal(view.tasks[0].items[p].source, "会话交付");
     assert.equal(
       JSON.stringify([...values]).includes("PRIVATE PATCH BODY"),
       false,
@@ -107,6 +109,8 @@ test("workspace switch with unresolved focus never pins the previous native or t
     await fs.writeFile(b, "B");
     f.item("A", "write-a", 1, { kind: "diff", path: a });
     f.item("B", "write-b", 1, { kind: "diff", path: b });
+    f.deliver("A", "deliver-a", 2, [a]);
+    f.deliver("B", "deliver-b", 2, [b]);
     f.current("A");
     assert.equal((await shelf.action()).tasks[0].sourceSession.id, "A");
     f.current("B", other.id);
@@ -295,51 +299,4 @@ test('switching during evidence verification never publishes the old session', a
     await shelf.checkFocus();
     assert.equal((await shelf.action()).tasks[0].sourceSession.id,'B');
   }finally{await shelf.dispose();await f.close();}
-});
-
-test("artifacts written outside the workspace but under home are listed and marked; hidden home dirs stay excluded", async () => {
-  const f = await fixture(),
-    values = new Map(),
-    home = await fs.mkdtemp(path.join(path.dirname(f.root), "home-")),
-    oldHome = process.env.HOME;
-  process.env.HOME = await fs.realpath(home);
-  const host = {
-    storage: {
-      get: async (k) => structuredClone(values.get(k)),
-      set: async (k, v) => values.set(k, structuredClone(v)),
-      delete: async (k) => values.delete(k),
-    },
-    host: { call: async () => ({ workspaces: [f.workspace] }) },
-    panels: { post: () => {} },
-    log: () => {},
-  };
-  const shelf = createShelf(host, {
-    sessions: true,
-    sessionOptions: { paths: f.paths, registrationDirectory: path.join(f.root, "registrations") },
-    stableMs: 1,
-  });
-  try {
-    const inside = path.join(f.root, "in.md"),
-      outside = path.join(process.env.HOME, "other", "report.md"),
-      hidden = path.join(process.env.HOME, ".secret", "key.md");
-    await fs.mkdir(path.dirname(outside));
-    await fs.mkdir(path.dirname(hidden));
-    for (const p of [inside, outside, hidden]) await fs.writeFile(p, "x");
-    f.session("A");
-    [inside, outside, hidden].forEach((p, i) =>
-      f.item("A", "w" + i, i + 1, { kind: "diff", path: p, patch: { head: "", truncated: false } }));
-    f.current("A");
-    const items = (await shelf.action()).tasks[0].items;
-    assert.deepEqual(Object.keys(items).sort(), [inside, outside].sort());
-    assert.equal(items[inside].outside, undefined);
-    assert.equal(items[outside].outside, true);
-    assert.equal(items[outside].relative, path.join("other", "report.md"));
-    // Outside files must stay openable/previewable through the same scope check.
-    assert.equal((await shelf.action({ action: "preview", path: outside })).reason === "产物已切换或不可用", false);
-  } finally {
-    process.env.HOME = oldHome;
-    shelf.dispose();
-    await f.close();
-    await fs.rm(home, { recursive: true, force: true });
-  }
 });

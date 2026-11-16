@@ -113,15 +113,16 @@ async function processIdentity(identity, options) {
     throw Error("终端进程已退出或启动时间不一致");
   return line;
 }
-// `outer` (home) admits verified writes beside the workspace; mentions stay project-only.
-function inProject(raw, project, outer) {
+function inProject(raw, project) {
   if (typeof raw !== "string" || raw.includes("\0") || !EXT.test(raw))
     return null;
   const file = path.resolve(project, raw),
-    root = [project, outer].find((r) => r && file.startsWith(r + path.sep)),
-    relative = root ? path.relative(root, file) : "";
+    relative = path.relative(project, file);
   if (
     !relative ||
+    relative.startsWith(".." + path.sep) ||
+    relative === ".." ||
+    path.isAbsolute(relative) ||
     relative
       .split(path.sep)
       .some(
@@ -185,7 +186,7 @@ export async function readClaudeTail(
     const stat = await handle.stat(),
       fileId = stat.dev + ":" + stat.ino;
     let cache =
-      previous?.readerVersion === 3 && previous.startOffset === 0 &&
+      previous?.readerVersion === 2 && previous.startOffset === 0 &&
       previous.fileId === fileId && previous.offset <= stat.size
         ? structuredClone(previous)
         : null;
@@ -199,7 +200,7 @@ export async function readClaudeTail(
       cache = null;
     if (!cache)
       cache = {
-        readerVersion: 3,
+        readerVersion: 2,
         fileId,
         offset: 0,
         skipFirst: false,
@@ -256,7 +257,7 @@ export async function readClaudeTail(
             ["Write", "Edit", "MultiEdit"].includes(part.name) &&
             typeof part.id === "string"
           ) {
-            const file = inProject(part.input?.file_path, project, os.homedir());
+            const file = inProject(part.input?.file_path, project);
             if (file) cache.pending[part.id] = { path: file, name: part.name };
           }
         }
@@ -403,7 +404,7 @@ export async function existingClaudeTerminal(
   const evidence = [];
   for (const proof of result.evidence) {
     try {
-      const file = await scopedArtifact(proof.path, [terminal.worktreePath, os.homedir()]);
+      const file = await scopedArtifact(proof.path, [terminal.worktreePath]);
       if (proof.evidence.kind !== "session-delivery" || !file.missing)
         evidence.push(proof);
     } catch {

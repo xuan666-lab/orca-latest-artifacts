@@ -193,7 +193,6 @@ export function mount(root, api, host) {
     const meta = document.createElement("span");
     meta.className = "meta";
     meta.textContent =
-      (file.outside ? ui("工作区外", orca.locale) + " · " : "") +
       ui(file.kind, orca.locale) +
       " · " +
       (file.sourceEvidence
@@ -216,10 +215,10 @@ export function mount(root, api, host) {
       ui("打开当前磁盘版本；更新于 ", orca.locale) +
       new Date(file.mtime).toLocaleString();
     main.append(preview, name);
-    if (duplicateName || file.outside) {
+    if (duplicateName) {
       const location = document.createElement("span");
       location.className = "location";
-      location.textContent = (file.outside ? "~/" : "") + file.relative;
+      location.textContent = file.relative;
       main.append(location);
     }
     main.append(meta);
@@ -326,7 +325,7 @@ export function mount(root, api, host) {
     $("import").hidden = state.mode === "session";
     $("end").hidden = state.mode === "session";
     $("scope").textContent = task
-      ? `${task.ended ? ui("已结束自动收集", orca.locale) : ui("正在收集", orca.locale)}\n${(state.mode === "session" ? task.roots.slice(0, 1) : task.roots).join("\n")}\n${task.workspace?.name || ui("未关联工作区", orca.locale)}`
+      ? `${task.ended ? ui("已结束自动收集", orca.locale) : ui("正在收集", orca.locale)}\n${task.roots.join("\n")}\n${task.workspace?.name || ui("未关联工作区", orca.locale)}`
       : ui("请选择限定输出目录", orca.locale);
     $("warnings").textContent = [
       ...(task?.errors || []).map((e) => e.message),

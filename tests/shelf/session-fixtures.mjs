@@ -146,6 +146,14 @@ export async function fixture() {
       )
       .run(seq, id);
   }
+  // Final assistant answer that explicitly hands over files (the only thing the panel lists).
+  function deliver(id, key, seq, files) {
+    item(id, key, seq, {
+      kind: "message",
+      role: "assistant",
+      blocks: [{ type: "text", text: "已生成交付：\n```text\n" + files.join("\n") + "\n```" }],
+    });
+  }
   async function close() {
     profile.close();
     journal.close();
@@ -161,6 +169,7 @@ export async function fixture() {
     current,
     part,
     item,
+    deliver,
     close,
   };
 }
