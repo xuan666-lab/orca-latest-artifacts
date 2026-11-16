@@ -303,3 +303,14 @@ test('terminal: a written file named in a final answer is delivered even without
     assert.equal(JSON.stringify(r.cache).includes('分镜'),false,'answer text is never cached');
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('a terminal with no hook record is flagged as a broken hook link, not a generic failure', async () => {
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-nohook-'))),statusDb=path.join(root,'status.db');
+  const db=new DatabaseSync(statusDb);
+  db.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);INSERT INTO meta VALUES('schema_version','202');CREATE TABLE rows(key TEXT PRIMARY KEY,seq INTEGER,value TEXT)");
+  db.close();
+  const terminal={handle:'term',incarnationId:'inc',tabId:'t',leafId:'l',worktreeId:'w',worktreePath:root,connected:true,orphaned:false,executionHostId:'local',agentIdentity:'claude'};
+  try{
+    await assert.rejects(existingClaudeTerminal({workspaceId:'w',tabId:'t'},[terminal],{get:async()=>null,set:async()=>{}},{statusDb,allowFixturePaths:true}),{code:'no-hook-record'});
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});

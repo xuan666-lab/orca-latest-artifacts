@@ -79,6 +79,10 @@ export const MESSAGES = {
     "此终端尚未接入产物追踪",
     "This terminal is not connected to artifact tracking",
   ],
+  terminalHookMissing: [
+    "这个 Claude 启动早于 Orca 重启，状态上报已断开。在新终端运行 claude --resume 恢复会话即可",
+    "This Claude started before Orca restarted, so its status reports no longer arrive. Resume the session in a new terminal with claude --resume",
+  ],
   refreshSession: ["刷新会话产物", "Refresh session artifacts"],
   importExisting: ["导入已有产物", "Import existing artifacts"],
   back: ["← 产物", "← Artifacts"],

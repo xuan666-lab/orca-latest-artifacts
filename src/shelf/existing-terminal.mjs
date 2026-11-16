@@ -58,8 +58,9 @@ async function hookIdentity(terminal, options = {}) {
       FROM rows WHERE key=?`,
       )
       .get("entry\0" + paneKey);
+    // No record at all: this Claude's hook reports never reach Orca (usually started before Orca restarted).
+    if (!row) throw Object.assign(Error("没有收到这个终端的状态上报"), { code: "no-hook-record" });
     if (
-      !row ||
       row.provider !== "claude" ||
       row.sessionKey !== "session_id" ||
       !ID.test(row.sessionId || "") ||

@@ -59,6 +59,7 @@ export function createSessionCatalog(orca, options = {}) {
             tracked = {
               status: "unavailable",
               reason: "终端身份核验失败：" + String(error.message || error),
+              terminalStatus: error.code === "no-hook-record" ? "hook-missing" : "untracked",
             };
           }
         }
@@ -67,7 +68,7 @@ export function createSessionCatalog(orca, options = {}) {
             task: null,
             pinned: false,
             status: tracked.reason,
-            terminalStatus: "untracked",
+            terminalStatus: tracked.terminalStatus || "untracked",
           };
         session = tracked.session;
         cacheWarning = !!tracked.cacheWarning;

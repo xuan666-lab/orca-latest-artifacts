@@ -330,7 +330,7 @@ export function mount(root, api, host) {
     $("warnings").textContent = [
       ...(task?.errors || []).map((e) => e.message),
       task?.watchError,
-      state.sessionPinned || state.terminalStatus === "untracked"
+      state.sessionPinned || ["untracked", "hook-missing"].includes(state.terminalStatus)
         ? null
         : state.sessionStatus,
     ]
@@ -365,6 +365,8 @@ export function mount(root, api, host) {
           : state.mode === "session"
           ? state.sessionLoading
             ? ui("正在读取会话记录，长会话首次需要几秒…", orca.locale)
+            : state.terminalStatus === "hook-missing"
+            ? t("terminalHookMissing", orca.locale)
             : state.terminalStatus === "untracked"
             ? ui("此终端尚未接入产物追踪", orca.locale)
             : t(task && state.viewScope === "latest-productive" ? "noProductive" : "emptySession", orca.locale)
