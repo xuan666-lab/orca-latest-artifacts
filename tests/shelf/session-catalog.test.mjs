@@ -220,7 +220,7 @@ test("an existing verified Claude terminal displays HTML and XLSX delivery witho
     await fs.writeFile(xlsx, "opaque fixture, not read as spreadsheet");
     await fs.writeFile(
       transcript,
-      JSON.stringify({
+      JSON.stringify({type:"user",sessionId:"S",uuid:"p",timestamp:"2026-11-12T00:59:00Z",message:{content:"请做"}})+"\n"+JSON.stringify({
         type: "assistant",
         sessionId: "S",
         uuid: "delivery",

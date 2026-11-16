@@ -460,7 +460,7 @@ export async function readEvidence(paths, session, previous) {
     if (epoch.format !== 3 || epoch.prefix_seq !== 0)
       throw Error("此会话 outcome/prefix 格式未适配，自动归属已关闭");
     const reusable =
-      previous?.readerVersion === 5 &&
+      previous?.readerVersion === 6 &&
       previous?.generation === epoch.generation &&
       previous?.epoch === epoch.epoch &&
       previous.through <= epoch.through_seq;
@@ -581,7 +581,7 @@ export async function readEvidence(paths, session, previous) {
       .all(epoch.generation, progress.targetThrough, progress.targetThrough);
     const cache = {
       turns,
-      readerVersion: 5,
+      readerVersion: 6,
       entryTurns,
       deliveryTurns,
       generation: epoch.generation,

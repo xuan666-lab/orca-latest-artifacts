@@ -7,7 +7,7 @@ import { fixture } from './session-fixtures.mjs';
 import { createSessionCatalog } from '../../src/shelf/session-catalog.mjs';
 import { createChunkedStorage } from '../../src/shelf/storage.mjs';
 
-const delivery = (id, file) => JSON.stringify({type:'assistant', sessionId:'S', uuid:id,
+const delivery = (id, file) => JSON.stringify({type:"user",sessionId:"S",uuid:"p",timestamp:"2026-11-12T00:59:00Z",message:{content:"请做"}})+"\n"+JSON.stringify({type:'assistant', sessionId:'S', uuid:id,
   timestamp:'2026-11-12T01:00:00Z', message:{stop_reason:'end_turn',content:[{type:'text',text:'交付产物\n```text\n'+file+'\n```'}]}})+'\n';
 
 test('full host quota keeps verified Claude terminal artifacts available, including after worker restart', async () => {

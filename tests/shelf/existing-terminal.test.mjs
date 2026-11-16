@@ -5,10 +5,10 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import {
-  deliveryPaths,
   readClaudeTail,
   existingClaudeTerminal,
 } from "../../src/shelf/existing-terminal.mjs";
+import { mentionTokens, changedMentions } from "../../src/shelf/native-delivery.mjs";
 const declaration = (id, file, text = "产物已交付") => ({
   type: "assistant",
   sessionId: "S",
@@ -25,16 +25,19 @@ const declaration = (id, file, text = "产物已交付") => ({
   },
 });
 const line = (row) => JSON.stringify(row) + "\n";
+const prompt = () => line({ type: "user", sessionId: "S", uuid: "p", timestamp: "2026-11-12T00:59:00Z", message: { content: "请做" } });
 
-test("delivery extraction distinguishes explicit final blocks from ordinary references", () => {
-  const root = "/project",
-    file = root + "/中文 空格.xlsx";
-  assert.deepEqual(deliveryPaths("产物：\n```text\n" + file + "\n```", root), [
-    file,
-  ]);
-  assert.deepEqual(deliveryPaths("稍后读取 `" + file + "`", root), []);
-  assert.deepEqual(deliveryPaths("参考资料：产物 `" + file + "`", root), []);
-  assert.deepEqual(deliveryPaths("产物：`/elsewhere/file.html`", root), []);
+test("delivery needs no wording: a named file counts only if it changed since the turn began", async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "shelf-changed-")));
+  try {
+    const fresh = path.join(root, "中文 空格.xlsx"), old = path.join(root, "reference.md");
+    await fs.writeFile(fresh, "x");
+    await fs.writeFile(old, "x");
+    await fs.utimes(old, new Date("2020-01-01"), new Date("2020-01-01"));
+    const tokens = mentionTokens("参考 `reference.md`，结果见：\n```text\n" + fresh + "\n```\n还有 `/elsewhere/x.html`");
+    assert.deepEqual(changedMentions(tokens, root, Date.parse("2026-01-01")), [fresh]);
+    assert.deepEqual(changedMentions(tokens, root, undefined), [], "unknown turn start never guesses");
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test("bounded history scan handles UTF8, partial append, replacement and oversized lines", async () => {
@@ -46,17 +49,19 @@ test("bounded history scan handles UTF8, partial append, replacement and oversiz
   try {
     const p = path.join(root, "一.html"),
       q = path.join(root, "二.xlsx");
+    await fs.writeFile(p, "x");
+    await fs.writeFile(q, "x");
     await fs.writeFile(
       file,
       line({ type: "system", padding: "汉".repeat(1800) }) +
-        line(declaration("one", p)),
+        prompt()+line(declaration("one", p)),
     );
     let result = await readClaudeTail(identity, root, null, { window: 1024 });
     for(let i=0;result.loading&&i<100;i++) result=await readClaudeTail(identity,root,result.cache,{window:1024});
     assert.equal(result.evidence.length, 1);
     assert.equal(result.evidence[0].path, p);
     assert.equal(result.coverage, "complete");
-    const second = Buffer.from(line(declaration("two", q))),
+    const second = Buffer.from(prompt()+line(declaration("two", q))),
       split = second.indexOf(Buffer.from("二")) + 1;
     await fs.appendFile(file, second.subarray(0, split));
     result = await readClaudeTail(identity, root, result.cache, {
@@ -70,7 +75,7 @@ test("bounded history scan handles UTF8, partial append, replacement and oversiz
     assert.equal(result.evidence.length, 2);
     assert.equal(JSON.stringify(result.cache).includes("PRIVATE NOTE"), false);
     const replacement = file + ".replacement";
-    await fs.writeFile(replacement, line(declaration("new", q)));
+    await fs.writeFile(replacement, prompt()+line(declaration("new", q)));
     await fs.rename(replacement, file);
     result = await readClaudeTail(identity, root, result.cache, {
       window: 1024,
@@ -80,7 +85,7 @@ test("bounded history scan handles UTF8, partial append, replacement and oversiz
     await fs.writeFile(
       file,
       line({ type: "system", padding: "x".repeat(5000) }) +
-        line(declaration("last", p)),
+        prompt()+line(declaration("last", p)),
     );
     result = await readClaudeTail(identity, root, result.cache, {
       window: 1024,
@@ -175,7 +180,7 @@ test("existing terminal recovery requires exact pane/process/UTC start and a sta
   };
   try {
     await fs.writeFile(artifact, "fixture metadata only");
-    await fs.writeFile(transcript, line(declaration("delivery", artifact)));
+    await fs.writeFile(transcript, prompt()+line(declaration("delivery", artifact)));
     const result = await existingClaudeTerminal(
       { workspaceId: "w", tabId: "t" },
       [terminal],
@@ -239,8 +244,8 @@ test('bounded initial scan retains artifacts before the final window and rebuild
   const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-full-history-')));
   const transcript=path.join(root,'S.jsonl'),identity={sessionId:'S',transcript};
   try {
-    const artifact=path.join(root,'earlier.html');
-    await fs.writeFile(transcript,line(declaration('early',artifact))+Array.from({length:60},()=>line({type:'system',padding:'x'.repeat(90)})).join(''));
+    const artifact=path.join(root,'earlier.html');await fs.writeFile(artifact,'x');
+    await fs.writeFile(transcript,prompt()+line(declaration('early',artifact))+Array.from({length:60},()=>line({type:'system',padding:'x'.repeat(90)})).join(''));
     let result=await readClaudeTail(identity,root,null,{window:1024});
     const first=result.cache.offset;
     assert.ok(first<=1024,'first scan must start at beginning and remain bounded');
@@ -272,7 +277,7 @@ test('a hook record without cwd is verified by the Claude project folder of its 
     await fs.writeFile(artifact,'x');
     for(const dir of [project.replace(/[^A-Za-z0-9]/g,'-'),'-other-project']){
       await fs.mkdir(path.join(root,dir));
-      await fs.writeFile(path.join(root,dir,'S.jsonl'),line(declaration('d',artifact)));
+      await fs.writeFile(path.join(root,dir,'S.jsonl'),prompt()+line(declaration('d',artifact)));
     }
     put(path.join(root,project.replace(/[^A-Za-z0-9]/g,'-'),'S.jsonl'));
     const result=await existingClaudeTerminal({workspaceId:'w',tabId:'t'},[terminal],storage,options);

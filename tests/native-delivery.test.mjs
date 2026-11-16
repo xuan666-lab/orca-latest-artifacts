@@ -1,7 +1,7 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import path from 'node:path';
+import {test} from 'node:test';import assert from 'node:assert/strict';import path from 'node:path';import fs from 'node:fs/promises';
 import {fixture} from './shelf/session-fixtures.mjs';
 import {verifySession,readEvidence} from '../src/shelf/session-adapter.mjs';
-import {declaredPaths} from '../src/shelf/native-delivery.mjs';
+
 function message(f,session,id,seq,text,{role='assistant',child=false,truncated=false,turn='turn'}={}){
  f.item(session,JSON.stringify(id),seq,{kind:'message',role,blocks:[{type:'text',text,truncated}]},{itemId:id});
  const generation=f.journal.prepare('SELECT generation FROM journal_outcome_epochs WHERE session_id=?').get(session).generation;
@@ -11,6 +11,8 @@ function complete(f,session,seq,turn='turn',outcome='success'){f.item(session,JS
 test('native Codex and Claude completed final deliveries are recovered, never child/user/tool references',async()=>{
  const f=await fixture();try{f.session('A','codex');f.session('B','claude');for(const id of ['A','B']){
   const session=await verifySession(f.paths,id,[f.workspace]),p=path.join(f.root,id+'.html'),q=path.join(f.root,id+'.md');
+  // Every named file exists and is fresh: only structure (role, child, turn) may exclude.
+  for(const n of [p,q,'wrong-user.html','not-yet.html','wrong-child.html'])await fs.writeFile(path.resolve(f.root,n),'x');
   message(f,id,'user',1,'已生成 [x]('+path.join(f.root,'wrong-user.html')+')',{role:'user'});
   message(f,id,'progress',2,'计划生成 `'+path.join(f.root,'not-yet.html')+'`');
   message(f,id,'final',3,'已完成交付：[页面]('+p+')\n```text\n'+q+'\n```\nPRIVATE TEXT');
@@ -24,14 +26,14 @@ test('failed turns, final references and truncated output do not become deliveri
  const f=await fixture();try{f.session('A');const session=await verifySession(f.paths,'A',[f.workspace]);const p=path.join(f.root,'x.html');
  message(f,'A','a',1,'已完成交付 [x]('+p+')',{truncated:true});complete(f,'A',2);let r=await readEvidence(f.paths,session);assert.equal(r.evidence.length,0);
  message(f,'A','b',3,'已完成交付 [x]('+p+')');complete(f,'A',4,'turn','failure');r=await readEvidence(f.paths,session,r.cache);assert.equal(r.evidence.length,0);
- assert.deepEqual(declaredPaths('参考文件：已生成 [x]('+p+')',f.root),[]);assert.deepEqual(declaredPaths('已生成 [x]('+p,f.root),[]);assert.deepEqual(declaredPaths('已生成 [x](/outside/x.html)',f.root),[]);
+ 
  }finally{await f.close();}
 });
 
 test('recovered native delivery survives latest productive filtering and empty follow-up',async()=>{
  const {latestProductiveArtifacts}=await import('../src/shelf/latest-artifacts.mjs');
  const f=await fixture();try{
- f.session('A');const session=await verifySession(f.paths,'A',[f.workspace]),p=path.join(f.root,'delivered.html');
+ f.session('A');const session=await verifySession(f.paths,'A',[f.workspace]),p=path.join(f.root,'delivered.html');await fs.writeFile(p,'x');
  message(f,'A','answer',1,'已完成交付 [page]('+p+')');complete(f,'A',2);
  let result=await readEvidence(f.paths,session);
  const select=r=>latestProductiveArtifacts({turns:r.turns,items:Object.fromEntries(r.evidence.map(e=>[e.path,{path:e.path,sourceEvidence:e.evidence}]))});

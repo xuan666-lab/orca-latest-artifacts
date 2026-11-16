@@ -8,7 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { liveTerminals } from "./terminal-tracking.mjs";
 import { scopedArtifact } from "./registrations.mjs";
-import { mentionTokens, mentionsFile } from "./native-delivery.mjs";
+import { mentionTokens, mentionsFile, changedMentions } from "./native-delivery.mjs";
 const exec = promisify(execFile),
   sha = (b) => createHash("sha256").update(b).digest("hex");
 // Track failed persistence for a stable in-memory cursor without retrying the
@@ -145,38 +145,6 @@ function inProject(raw, project) {
     return null;
   return file;
 }
-/** Explicit final delivery blocks/links, not generic path mentions or reference prose. */
-export function deliveryPaths(text, project) {
-  if (
-    typeof text !== "string" ||
-    text.length > MAX_LINE ||
-    !/交付|产物|输出文件|生成结果|文件已|已(?:经)?(?:完成|生成|创建|写|输出|整理|保存)|\b(?:created|generated|saved|written|delivered)\b/i.test(
-      text,
-    ) ||
-    /参考资料|参考文件|引用文件|示例路径|计划生成/.test(text)
-  )
-    return [];
-  const candidates = [];
-  for (const block of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g))
-    for (const line of block[1].split("\n")) candidates.push(line.trim());
-  for (const link of text.matchAll(/\[[^\]]*\]\((<?[^)]+>?)\)/g))
-    candidates.push(link[1].replace(/^<|>$/g, ""));
-  for (const code of text
-    .replace(/```[\s\S]*?```/g, "")
-    .matchAll(/`([^`\n]+)`/g))
-    candidates.push(code[1]);
-  for (const line of text.split("\n"))
-    if (/^\s*\//.test(line)) candidates.push(line.trim());
-  return [
-    ...new Set(
-      candidates
-        .filter((p) => p.startsWith("/") || p.startsWith("./"))
-        .map((p) => inProject(p, project))
-        .filter(Boolean),
-    ),
-  ];
-}
-
 // Writes the agent later names in a final answer are what the terminal showed as results.
 function mentionedWrites(cache) {
   const tokens = Object.keys(cache.mentions), seen = new Set(), out = [];
@@ -204,7 +172,7 @@ export async function readClaudeTail(
     const stat = await handle.stat(),
       fileId = stat.dev + ":" + stat.ino;
     let cache =
-      previous?.readerVersion === 3 && previous.startOffset === 0 &&
+      previous?.readerVersion === 4 && previous.startOffset === 0 &&
       previous.fileId === fileId && previous.offset <= stat.size
         ? structuredClone(previous)
         : null;
@@ -218,7 +186,7 @@ export async function readClaudeTail(
       cache = null;
     if (!cache)
       cache = {
-        readerVersion: 3,
+        readerVersion: 4,
         fileId,
         offset: 0,
         skipFirst: false,
@@ -285,13 +253,14 @@ export async function readClaudeTail(
           !parts.some((p) => p.type === "tool_use") &&
           typeof row.uuid === "string"
         ) {
-          for (const part of parts.filter((p) => p.type === "text"))
-            for (const token of mentionTokens(part.text)) {
-              delete cache.mentions[token];
-              cache.mentions[token] = { itemId: row.uuid, observedAt: row.timestamp };
-            }
-          for (const part of parts.filter((p) => p.type === "text"))
-            for (const file of deliveryPaths(part.text, project)) {
+          const tokens = parts
+            .filter((p) => p.type === "text")
+            .flatMap((p) => mentionTokens(p.text));
+          for (const token of tokens) {
+            delete cache.mentions[token];
+            cache.mentions[token] = { itemId: row.uuid, observedAt: row.timestamp };
+          }
+          for (const file of changedMentions(tokens, project, cache.turnStart)) {
               cache.evidence["delivery:" + row.uuid + ":" + file] = {
                 path: file,
                 evidence: {
@@ -304,6 +273,13 @@ export async function readClaudeTail(
             }
         }
       }
+      // A typed prompt (not a tool result or injected meta row) starts a turn.
+      if (
+        row.type === "user" && !row.isMeta &&
+        (typeof row.message?.content === "string" ||
+          (parts.some((p) => p.type === "text") && !parts.some((p) => p.type === "tool_result")))
+      )
+        cache.turnStart = Date.parse(row.timestamp);
       if (row.type === "user")
         for (const part of parts) {
           if (

@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
-- A file the agent wrote and then named in its final answer (as inline code, a link or in a code block) now counts as delivered, without needing words like "delivered". Files written but never named stay hidden.
+- Delivery no longer depends on wording. A file counts as delivered when the agent names it in a final answer (inline code, link or code block) and it was created or modified during that turn, or the agent wrote it with a file tool. Referenced files the turn did not touch, and working files never named, stay hidden. The previous keyword lists are gone.
+- Script- or sub-agent-generated outputs that the answer names now appear.
 - Claude terminals whose Orca hook record lacks a working directory are verified by their transcript folder instead of showing "not tracked".
 
 ## 0.1.2

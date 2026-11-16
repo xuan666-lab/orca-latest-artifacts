@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 const EXT =
   /\.(html?|png|jpe?g|webp|gif|pdf|mp4|mov|webm|m4v|md|markdown|xlsx?|csv)$/i;
@@ -5,9 +6,10 @@ const EXT =
 export function mentionTokens(text) {
   if (typeof text !== "string" || text.length > 262144) return [];
   const raw = [];
-  for (const b of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)) raw.push(...b[1].split(/\s+/));
+  for (const b of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g))
+    for (const l of b[1].split("\n")) raw.push(l.trim(), ...l.split(/\s+/));
   for (const m of text.matchAll(/\[[^\]]*\]\(<?([^)>]+)>?\)/g)) raw.push(m[1]);
-  for (const m of text.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g)) raw.push(...m[1].split(/\s+/));
+  for (const m of text.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g)) raw.push(m[1].trim(), ...m[1].split(/\s+/));
   return [...new Set(raw
     .map((t) => t.replace(/^["'(]+|["'),.;:]+$/g, "").replace(/^\.\//, ""))
     .filter((t) => t && t.length <= 512 && !t.includes("\0") && !t.split("/").includes("..") && EXT.test(t)))];
@@ -15,57 +17,32 @@ export function mentionTokens(text) {
 /** A written file counts as handed over when the answer names it (absolute, or by a path suffix). */
 export const mentionsFile = (tokens, file) =>
   tokens.some((t) => file === t || file.endsWith(path.sep + t));
-export function declaredPaths(text, project) {
-  if (
-    typeof text !== "string" ||
-    text.length > 262144 ||
-    !/交付|产物|输出文件|生成结果|(?:文件|文档|报告)已|已(?:经)?(?:完成|生成|创建|写|输出|整理|保存|实现|提交|更新|补充|修复|合并)|\b(?:created|generated|saved|written|delivered)\b/i.test(
-      text,
-    ) ||
-    /参考资料|参考文件|引用文件|示例路径|计划生成|没有(?:生成|创建|输出|交付)|未(?:生成|创建|输出|交付)/.test(
-      text,
-    )
-  )
-    return [];
-  if ((text.match(/```/g) || []).length % 2) return [];
-  const candidates = [];
-  for (const b of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g))
-    candidates.push(...b[1].split("\n").map((x) => x.trim()));
-  for (const m of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g))
-    candidates.push(m[1].replace(/^<|>$/g, ""));
-  for (const m of text.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g))
-    candidates.push(m[1]);
-  return [
-    ...new Set(
-      candidates.flatMap((raw) => {
-        if (/^[a-z][\w+.-]*:/i.test(raw) || !EXT.test(raw)) return [];
-        const file = path.resolve(project, raw),
-          relative = path.relative(project, file);
-        if (
-          !relative ||
-          relative === ".." ||
-          relative.startsWith(".." + path.sep) ||
-          path.isAbsolute(relative) ||
-          relative
-            .split(path.sep)
-            .some(
-              (n) =>
-                n.startsWith(".") ||
-                [
-                  "node_modules",
-                  "warehouse",
-                  "venv",
-                  "cache",
-                  "__pycache__",
-                ].includes(n),
-            )
-        )
-          return [];
-        return [file];
-      }),
-    ),
-  ];
+const EXCLUDED = ["node_modules", "warehouse", "venv", "cache", "__pycache__"];
+/** Project file a token names, or null when it leaves the project or hits an excluded folder. */
+export function inScope(token, project) {
+  const file = path.resolve(project, token),
+    relative = path.relative(project, file);
+  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative))
+    return null;
+  if (relative.split(path.sep).some((n) => n.startsWith(".") || EXCLUDED.includes(n))) return null;
+  return file;
 }
+/**
+ * Files an answer names that were created or modified since its turn began.
+ * No wording rules: a referenced file that this turn did not touch is not a deliverable.
+ */
+export function changedMentions(tokens, project, since) {
+  if (!Number.isFinite(since)) return [];
+  return [...new Set(tokens.map((t) => inScope(t, project)).filter(Boolean))].filter((file) => {
+    try {
+      const stat = fs.statSync(file);
+      return stat.isFile() && stat.mtimeMs >= since - 2000; // 2 s: coarse filesystem clocks
+    } catch {
+      return false;
+    }
+  });
+}
+const time = (v) => (typeof v === "number" ? v : Date.parse(v));
 export function finalTurnDelivery(db, generation, turnId, through, project, written = []) {
   if (typeof turnId !== "string") return [];
   const turn = db
@@ -115,9 +92,12 @@ export function finalTurnDelivery(db, generation, turnId, through, project, writ
     .filter((b) => b.type === "text" && typeof b.text === "string")
     .map((b) => b.text)
     .join("\n");
-  const tokens = mentionTokens(text);
+  const tokens = mentionTokens(text),
+    started = db
+      .prepare("SELECT MIN(json_extract(value_json,'$.observedAt')) t FROM journal_outcomes WHERE generation=? AND field='items' AND entry_key=? AND seq<=?")
+      .get(generation, JSON.stringify(turnId), through)?.t;
   return [...new Set([
-    ...declaredPaths(text, project),
+    ...changedMentions(tokens, project, time(started)),
     ...written.filter((file) => mentionsFile(tokens, file)),
   ])].map((file) => ({
     path: file,
