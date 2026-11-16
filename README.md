@@ -15,7 +15,7 @@
 - Supports Chinese and English based on Orca's UI language.
 - Provides directory discovery as an explicit fallback when a session cannot be verified.
 
-Terminal sessions without reliable turn identifiers are labelled **turn identity unavailable**. They show verified session artifacts, not a guessed latest turn. Only files the agent actually handed over are listed: paths in a completed final answer, or verified registrations. Files it merely wrote or edited along the way (notes, config, working docs) are not shown; matching filenames and modification times are never enough.
+Terminal sessions without reliable turn identifiers are labelled **turn identity unavailable**. They show verified session artifacts, not a guessed latest turn. Only files the agent actually handed over are listed: files it wrote and then named in a completed final answer, explicitly delivered paths, or verified registrations. Files it merely wrote or edited along the way (notes, config, working docs) are not shown; matching filenames and modification times are never enough.
 
 The plugin does not send prompts, create agents or provide its own annotation overlay.
 

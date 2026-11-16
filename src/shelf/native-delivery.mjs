@@ -1,6 +1,20 @@
 import path from "node:path";
 const EXT =
   /\.(html?|png|jpe?g|webp|gif|pdf|mp4|mov|webm|m4v|md|markdown|xlsx?|csv)$/i;
+/** File-like tokens an answer shows the user: inline code, link targets, code-block words. */
+export function mentionTokens(text) {
+  if (typeof text !== "string" || text.length > 262144) return [];
+  const raw = [];
+  for (const b of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)) raw.push(...b[1].split(/\s+/));
+  for (const m of text.matchAll(/\[[^\]]*\]\(<?([^)>]+)>?\)/g)) raw.push(m[1]);
+  for (const m of text.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g)) raw.push(...m[1].split(/\s+/));
+  return [...new Set(raw
+    .map((t) => t.replace(/^["'(]+|["'),.;:]+$/g, "").replace(/^\.\//, ""))
+    .filter((t) => t && t.length <= 512 && !t.includes("\0") && !t.split("/").includes("..") && EXT.test(t)))];
+}
+/** A written file counts as handed over when the answer names it (absolute, or by a path suffix). */
+export const mentionsFile = (tokens, file) =>
+  tokens.some((t) => file === t || file.endsWith(path.sep + t));
 export function declaredPaths(text, project) {
   if (
     typeof text !== "string" ||
@@ -52,7 +66,7 @@ export function declaredPaths(text, project) {
     ),
   ];
 }
-export function finalTurnDelivery(db, generation, turnId, through, project) {
+export function finalTurnDelivery(db, generation, turnId, through, project, written = []) {
   if (typeof turnId !== "string") return [];
   const turn = db
     .prepare(
@@ -101,7 +115,11 @@ export function finalTurnDelivery(db, generation, turnId, through, project) {
     .filter((b) => b.type === "text" && typeof b.text === "string")
     .map((b) => b.text)
     .join("\n");
-  return declaredPaths(text, project).map((file) => ({
+  const tokens = mentionTokens(text);
+  return [...new Set([
+    ...declaredPaths(text, project),
+    ...written.filter((file) => mentionsFile(tokens, file)),
+  ])].map((file) => ({
     path: file,
     evidence: {
       kind: "session-delivery",

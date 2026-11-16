@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A file the agent wrote and then named in its final answer (as inline code, a link or in a code block) now counts as delivered, without needing words like "delivered". Files written but never named stay hidden.
+- Claude terminals whose Orca hook record lacks a working directory are verified by their transcript folder instead of showing "not tracked".
+
 ## 0.1.2
 
 - List only what the agent actually handed over: paths in a completed final answer, or verified registrations. Files merely written or edited along the way are no longer shown.

@@ -43,3 +43,16 @@ test('recovered native delivery survives latest productive filtering and empty f
  result=await readEvidence(f.paths,session,result.cache);assert.deepEqual(Object.keys(select(result).items),[p]);
  }finally{await f.close();}
 });
+
+test('native: files written in a turn and named in its final answer are delivered without keywords',async()=>{
+ const {latestProductiveArtifacts}=await import('../src/shelf/latest-artifacts.mjs');
+ const f=await fixture();try{
+ f.session('A');const session=await verifySession(f.paths,'A',[f.workspace]),spec=path.join(f.root,'video','SPEC.md'),other=path.join(f.root,'video','scene.html');
+ f.item('A','w1',1,{kind:'diff',path:spec,patch:{head:'',truncated:false}});f.item('A','w2',2,{kind:'diff',path:other,patch:{head:'',truncated:false}});
+ for(const k of ['w1','w2'])f.journal.prepare("UPDATE journal_outcomes SET value_json=json_set(value_json,'$.turnScope.turnItemId','turn') WHERE entry_key=?").run(k);
+ message(f,'A','answer',3,'分镜写在 `video/SPEC.md`');complete(f,'A',4);
+ const r=await readEvidence(f.paths,session);
+ const items={};for(const e of r.evidence)(items[e.path]??={path:e.path,evidence:[]}).evidence.push(e.evidence);
+ assert.deepEqual(Object.keys(latestProductiveArtifacts({turns:r.turns,items}).items),[spec]);
+ }finally{await f.close();}
+});

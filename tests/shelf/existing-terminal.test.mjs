@@ -282,3 +282,19 @@ test('a hook record without cwd is verified by the Claude project folder of its 
     await assert.rejects(existingClaudeTerminal({workspaceId:'w',tabId:'t'},[terminal],new Map()&&{get:async()=>null,set:async()=>{}},options),/路径与项目不一致/);
   }finally{db.close();await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('terminal: a written file named in a final answer is delivered even without delivery keywords; unnamed writes are not', async () => {
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-mention-'))),transcript=path.join(root,'S.jsonl');
+  const write=(id,file)=>line({type:'assistant',sessionId:'S',uuid:'a'+id,timestamp:'2026-11-12T01:00:00Z',message:{content:[{type:'tool_use',id,name:'Write',input:{file_path:file}}]}})
+    +line({type:'user',sessionId:'S',uuid:'u'+id,timestamp:'2026-11-12T01:00:01Z',message:{content:[{type:'tool_result',tool_use_id:id}]}});
+  const answer=(text)=>line({type:'assistant',sessionId:'S',uuid:'final',timestamp:'2026-11-12T01:00:02Z',message:{stop_reason:'end_turn',content:[{type:'text',text}]}});
+  try{
+    const spec=path.join(root,'video','SPEC.md'),scene=path.join(root,'video','scene.html'),page=path.join(root,'site','index.html');
+    await fs.writeFile(transcript,write('t1',spec)+write('t2',scene)+write('t3',page)+answer('分镜写在 `video/SPEC.md`。\n```bash\nopen '+page+'\n```'));
+    let r=await readClaudeTail({sessionId:'S',transcript},root,null);
+    for(let i=0;r.loading&&i<100;i++)r=await readClaudeTail({sessionId:'S',transcript},root,r.cache);
+    const delivered=r.evidence.filter(e=>e.evidence.kind==='session-delivery').map(e=>e.path).sort();
+    assert.deepEqual(delivered,[page,spec].sort());
+    assert.equal(JSON.stringify(r.cache).includes('分镜'),false,'answer text is never cached');
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});

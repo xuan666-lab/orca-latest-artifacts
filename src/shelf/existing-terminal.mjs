@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { liveTerminals } from "./terminal-tracking.mjs";
 import { scopedArtifact } from "./registrations.mjs";
+import { mentionTokens, mentionsFile } from "./native-delivery.mjs";
 const exec = promisify(execFile),
   sha = (b) => createHash("sha256").update(b).digest("hex");
 // Track failed persistence for a stable in-memory cursor without retrying the
@@ -176,6 +177,19 @@ export function deliveryPaths(text, project) {
   ];
 }
 
+// Writes the agent later names in a final answer are what the terminal showed as results.
+function mentionedWrites(cache) {
+  const tokens = Object.keys(cache.mentions), seen = new Set(), out = [];
+  for (const proof of Object.values(cache.evidence)) {
+    if (proof.evidence.kind !== "tool-write" || seen.has(proof.path)) continue;
+    const token = tokens.findLast((t) => mentionsFile([t], proof.path));
+    if (!token) continue;
+    seen.add(proof.path);
+    out.push({ path: proof.path, evidence: { kind: "session-delivery", relation: "mentioned", ...cache.mentions[token] } });
+  }
+  return out;
+}
+
 export async function readClaudeTail(
   identity,
   project,
@@ -190,7 +204,7 @@ export async function readClaudeTail(
     const stat = await handle.stat(),
       fileId = stat.dev + ":" + stat.ino;
     let cache =
-      previous?.readerVersion === 2 && previous.startOffset === 0 &&
+      previous?.readerVersion === 3 && previous.startOffset === 0 &&
       previous.fileId === fileId && previous.offset <= stat.size
         ? structuredClone(previous)
         : null;
@@ -204,12 +218,13 @@ export async function readClaudeTail(
       cache = null;
     if (!cache)
       cache = {
-        readerVersion: 2,
+        readerVersion: 3,
         fileId,
         offset: 0,
         skipFirst: false,
         pending: {},
         evidence: {},
+        mentions: {},
         startOffset: 0,
       };
     const available = Math.min(
@@ -271,6 +286,11 @@ export async function readClaudeTail(
           typeof row.uuid === "string"
         ) {
           for (const part of parts.filter((p) => p.type === "text"))
+            for (const token of mentionTokens(part.text)) {
+              delete cache.mentions[token];
+              cache.mentions[token] = { itemId: row.uuid, observedAt: row.timestamp };
+            }
+          for (const part of parts.filter((p) => p.type === "text"))
             for (const file of deliveryPaths(part.text, project)) {
               cache.evidence["delivery:" + row.uuid + ":" + file] = {
                 path: file,
@@ -306,6 +326,9 @@ export async function readClaudeTail(
               },
             };
         }
+      const mentioned = Object.keys(cache.mentions);
+      for (const key of mentioned.slice(0, Math.max(0, mentioned.length - 4096)))
+        delete cache.mentions[key];
       const pending = Object.keys(cache.pending);
       if (pending.length > 128)
         for (const key of pending.slice(0, pending.length - 128))
@@ -334,7 +357,7 @@ export async function readClaudeTail(
     cache.mtime = stat.mtimeMs;
     return {
       cache,
-      evidence: Object.values(cache.evidence),
+      evidence: [...Object.values(cache.evidence), ...mentionedWrites(cache)],
       loading: cache.offset < stat.size,
       coverage: cache.startOffset > 0 ? "recent-tail" : "complete",
     };

@@ -460,7 +460,7 @@ export async function readEvidence(paths, session, previous) {
     if (epoch.format !== 3 || epoch.prefix_seq !== 0)
       throw Error("此会话 outcome/prefix 格式未适配，自动归属已关闭");
     const reusable =
-      previous?.readerVersion === 4 &&
+      previous?.readerVersion === 5 &&
       previous?.generation === epoch.generation &&
       previous?.epoch === epoch.epoch &&
       previous.through <= epoch.through_seq;
@@ -567,6 +567,9 @@ export async function readEvidence(paths, session, previous) {
         turnId,
         progress.targetThrough,
         session.projectPath,
+        Object.keys(entryTurns)
+          .filter((key) => entryTurns[key] === turnId)
+          .flatMap((key) => (entries[key] || []).map((p) => p.path)),
       );
       if (proof.length) deliveryTurns[turnId] = proof;
       else delete deliveryTurns[turnId];
@@ -578,7 +581,7 @@ export async function readEvidence(paths, session, previous) {
       .all(epoch.generation, progress.targetThrough, progress.targetThrough);
     const cache = {
       turns,
-      readerVersion: 4,
+      readerVersion: 5,
       entryTurns,
       deliveryTurns,
       generation: epoch.generation,
