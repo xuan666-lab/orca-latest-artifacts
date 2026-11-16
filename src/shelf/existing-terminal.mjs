@@ -77,8 +77,12 @@ async function hookIdentity(terminal, options = {}) {
     )
       throw Error("终端身份范围不一致");
     if (
-      row.cwd !== terminal.worktreePath ||
       !path.isAbsolute(row.transcript || "") ||
+      // Some hook records omit cwd; Claude names the transcript folder after the project path.
+      (row.cwd == null
+        ? path.basename(path.dirname(row.transcript)) !==
+          terminal.worktreePath.replace(/[^A-Za-z0-9]/g, "-")
+        : row.cwd !== terminal.worktreePath) ||
       path.basename(row.transcript) !== row.sessionId + ".jsonl"
     )
       throw Error("终端会话路径与项目不一致");

@@ -254,3 +254,31 @@ test('bounded initial scan retains artifacts before the final window and rebuild
     assert.deepEqual(result.evidence.map(x=>x.path),[artifact]);
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('a hook record without cwd is verified by the Claude project folder of its transcript', async () => {
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-nocwd-'))),
+    project=path.join(root,'my.proj'),statusDb=path.join(root,'status.db'),artifact=path.join(project,'r.html');
+  await fs.mkdir(project);
+  const db=new DatabaseSync(statusDb);
+  db.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);INSERT INTO meta VALUES('schema_version','202');CREATE TABLE rows(key TEXT PRIMARY KEY,seq INTEGER,value TEXT)");
+  const terminal={handle:'term',incarnationId:'inc',tabId:'t',leafId:'l',worktreeId:'w',worktreePath:project,connected:true,orphaned:false,executionHostId:'local',agentIdentity:'claude'};
+  const put=(transcript)=>db.prepare("INSERT OR REPLACE INTO rows VALUES(?,?,?)").run('entry\0t:l',1,JSON.stringify({
+    providerSession:{id:'S',key:'session_id',transcriptPath:transcript},
+    agentPresence:{sessionOwner:true,process:{pid:123,startTime:'Tue Nov 10 07:25:19 2026',platform:'darwin'}},
+    hostTurn:{owner:'claude:S'},payload:{agentType:'claude'},worktreeId:'w',tabId:'t',paneKey:'t:l',connectionId:null}));
+  const options={statusDb,allowFixturePaths:true,runner:async()=>({stdout:'Tue Nov 10 07:25:19 2026 claude\n'}),liveTerminals:async()=>[terminal]};
+  const store=new Map(),storage={get:async k=>store.get(k),set:async(k,v)=>store.set(k,v)};
+  try{
+    await fs.writeFile(artifact,'x');
+    for(const dir of [project.replace(/[^A-Za-z0-9]/g,'-'),'-other-project']){
+      await fs.mkdir(path.join(root,dir));
+      await fs.writeFile(path.join(root,dir,'S.jsonl'),line(declaration('d',artifact)));
+    }
+    put(path.join(root,project.replace(/[^A-Za-z0-9]/g,'-'),'S.jsonl'));
+    const result=await existingClaudeTerminal({workspaceId:'w',tabId:'t'},[terminal],storage,options);
+    assert.equal(result.status,'ok');
+    assert.deepEqual(result.evidence.map(e=>e.path),[artifact]);
+    put(path.join(root,'-other-project','S.jsonl'));
+    await assert.rejects(existingClaudeTerminal({workspaceId:'w',tabId:'t'},[terminal],new Map()&&{get:async()=>null,set:async()=>{}},options),/路径与项目不一致/);
+  }finally{db.close();await fs.rm(root,{recursive:true,force:true});}
+});
