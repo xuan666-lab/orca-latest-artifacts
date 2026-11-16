@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- Opening an artifact (or a browser tab) in the same workspace keeps the session's list instead of emptying it with a "not a native Chat" warning. Tabs from another workspace, or focus that cannot be verified, still clear it.
+- A Claude terminal that has no Orca hook record now says why: it was started before Orca restarted, so its status reports no longer arrive. Resume it in a new terminal with `claude --resume`.
+
 ## 0.1.3
 
 - Delivery no longer depends on wording. A file counts as delivered when the agent names it in a final answer (inline code, link or code block) and it was created or modified during that turn, or the agent wrote it with a file tool. Referenced files the turn did not touch, and working files never named, stay hidden. The previous keyword lists are gone.
