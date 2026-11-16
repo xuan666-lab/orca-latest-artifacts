@@ -24,6 +24,11 @@ export function createSessionCatalog(orca, options = {}) {
       const paths = options.paths || (await profilePaths());
       let candidate = await currentCandidate(paths);
       let pinnedReason = null;
+      // Opening an artifact must not empty the list it came from: keep the same workspace's task.
+      if (candidate.status === "other-tab")
+        return previousTask?.workspace?.id === candidate.workspaceId
+          ? { task: previousTask, pinned: false, status: null, terminalStatus: previousTask.terminalSource ? "connected" : null }
+          : { task: null, pinned: false, status: null };
       if (candidate.status !== "ok" && candidate.status !== "terminal")
         return { task: null, pinned: false, status: candidate.reason };
       const { workspaces } = await orca.host.call("workspace.list", {});

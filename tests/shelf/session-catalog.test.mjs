@@ -5,7 +5,7 @@ import path from "node:path";
 import { fixture } from "./session-fixtures.mjs";
 import { createShelf } from "../../src/shelf/service.mjs";
 
-test("default session gallery follows A/B, clears on non-session focus, preserves deletion and never mixes directory artifacts", async () => {
+test("default session gallery follows A/B, keeps the list on a same-workspace non-session tab, preserves deletion and never mixes directory artifacts", async () => {
   const f = await fixture(),
     values = new Map();
   const host = {
@@ -58,7 +58,7 @@ test("default session gallery follows A/B, clears on non-session focus, preserve
     await fs.unlink(q);
     view = await shelf.action({ action: "refresh" });
     assert.equal(view.sessionPinned, false);
-    assert.deepEqual(view.tasks, []);
+    assert.equal(view.tasks[0].sourceSession.id, "B", "a browser tab in the same workspace keeps B's list");
     f.current("B");
     view = await shelf.action({ action: "refresh" });
     assert.equal(view.tasks[0].items[q].missing, true);
@@ -282,7 +282,7 @@ test('focus probe refreshes a switched session immediately without rereading unc
     assert.equal((await shelf.action()).tasks[0].sourceSession.id, 'B');
     f.part(['activeTabTypeByWorktree','workspace'], 'browser');
     await shelf.checkFocus();
-    assert.deepEqual((await shelf.action()).tasks, []);
+    assert.equal((await shelf.action()).tasks[0].sourceSession.id, 'B');
   } finally { await shelf.dispose(); await f.close(); }
 });
 
@@ -299,4 +299,45 @@ test('switching during evidence verification never publishes the old session', a
     await shelf.checkFocus();
     assert.equal((await shelf.action()).tasks[0].sourceSession.id,'B');
   }finally{await shelf.dispose();await f.close();}
+});
+
+test("opening an artifact in an editor tab keeps the same workspace's list instead of emptying it", async () => {
+  const f = await fixture();
+  const values = new Map();
+  const other = { ...f.workspace, id: "editor-other-workspace", name: "Other" };
+  const host = {
+    storage: { get: async (k) => structuredClone(values.get(k)), set: async (k, v) => values.set(k, structuredClone(v)), delete: async (k) => values.delete(k) },
+    host: { call: async () => ({ workspaces: [f.workspace, other] }) },
+    panels: { post: () => {} },
+    log: () => {},
+  };
+  const shelf = createShelf(host, { sessions: true, sessionOptions: { paths: f.paths, registrationDirectory: path.join(f.root, "registrations") } });
+  const editor = (workspaceId) => {
+    f.part(["activeWorktreeId"], workspaceId);
+    f.part(["activeWorkspaceKey"], "worktree:" + workspaceId);
+    f.part(["activeTabTypeByWorktree", workspaceId], "editor");
+    f.part(["activeTabIdByWorktree", workspaceId], "file-tab");
+    f.part(["activeGroupIdByWorktree", workspaceId], "g");
+    f.part(["tabGroups", workspaceId], [{ id: "g", worktreeId: workspaceId, activeTabId: "file-tab" }]);
+  };
+  try {
+    f.session("A");
+    const a = path.join(f.root, "report.html");
+    await fs.writeFile(a, "A");
+    f.item("A", "write-a", 1, { kind: "diff", path: a });
+    f.deliver("A", "deliver-a", 2, [a]);
+    f.current("A");
+    assert.equal((await shelf.action()).tasks[0].sourceSession.id, "A");
+    editor(f.workspace.id);
+    let view = await shelf.action({ action: "refresh" });
+    assert.equal(view.tasks[0]?.sourceSession.id, "A");
+    assert.deepEqual(Object.keys(view.tasks[0].items), [a]);
+    assert.equal(view.sessionStatus, null);
+    editor(other.id);
+    view = await shelf.action({ action: "refresh" });
+    assert.deepEqual(view.tasks, [], "another workspace's editor must not show A");
+  } finally {
+    shelf.dispose();
+    await f.close();
+  }
 });

@@ -202,6 +202,9 @@ export async function currentCandidate(paths) {
     }
     if (type === "terminal" && typeof tab === "string" && tab.length > 0)
       return { status: "terminal", tabId: tab, workspaceId: workspace };
+    // A file, browser or other non-session tab is focused (e.g. an artifact just opened).
+    if (typeof type === "string" && type && type !== "agent-session" && typeof tab === "string" && tab)
+      return { status: "other-tab", workspaceId: workspace };
     if (
       type !== "agent-session" ||
       typeof tab !== "string" ||

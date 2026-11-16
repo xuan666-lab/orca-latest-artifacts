@@ -55,7 +55,7 @@ test("native current tab uses exact session, workspace and group; authoritative 
     assert.equal((await currentCandidate(f.paths)).status, "unavailable");
     f.current("A");
     f.part(["activeTabTypeByWorktree", f.workspace.id], "browser");
-    assert.equal((await currentCandidate(f.paths)).status, "unavailable");
+    assert.deepEqual(await currentCandidate(f.paths), { status: "other-tab", workspaceId: f.workspace.id });
     await assert.rejects(
       verifySession(f.paths, "A", [f.workspace], {
         workspaceId: "wrong",
@@ -342,7 +342,7 @@ test("unified group focus wins over stale legacy tab fields on rapid native/term
     focus("terminal-view");
     assert.deepEqual(await currentCandidate(f.paths), {status:"terminal",tabId:"terminal-entity",workspaceId:"workspace"});
     focus("browser-view");
-    assert.equal((await currentCandidate(f.paths)).status, "unavailable");
+    assert.deepEqual(await currentCandidate(f.paths), {status:"other-tab",workspaceId:"workspace"});
     // No recent-tab or legacy fallback when authoritative focus cannot resolve.
     focus("missing-view");
     assert.equal((await currentCandidate(f.paths)).status, "unavailable");
