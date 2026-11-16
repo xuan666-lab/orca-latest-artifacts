@@ -37,7 +37,7 @@ test("delivery extraction distinguishes explicit final blocks from ordinary refe
   assert.deepEqual(deliveryPaths("产物：`/elsewhere/file.html`", root), []);
 });
 
-test("bounded tail handles truncated UTF8 first line, partial append, replacement and oversized lines", async () => {
+test("bounded history scan handles UTF8, partial append, replacement and oversized lines", async () => {
   const root = await fs.realpath(
       await fs.mkdtemp(path.join(os.tmpdir(), "shelf-tail-")),
     ),
@@ -52,9 +52,10 @@ test("bounded tail handles truncated UTF8 first line, partial append, replacemen
         line(declaration("one", p)),
     );
     let result = await readClaudeTail(identity, root, null, { window: 1024 });
+    for(let i=0;result.loading&&i<100;i++) result=await readClaudeTail(identity,root,result.cache,{window:1024});
     assert.equal(result.evidence.length, 1);
     assert.equal(result.evidence[0].path, p);
-    assert.equal(result.coverage, "recent-tail");
+    assert.equal(result.coverage, "complete");
     const second = Buffer.from(line(declaration("two", q))),
       split = second.indexOf(Buffer.from("二")) + 1;
     await fs.appendFile(file, second.subarray(0, split));
@@ -84,6 +85,7 @@ test("bounded tail handles truncated UTF8 first line, partial append, replacemen
     result = await readClaudeTail(identity, root, result.cache, {
       window: 1024,
     });
+    for(let i=0;result.loading&&i<100;i++) result=await readClaudeTail(identity,root,result.cache,{window:1024});
     assert.equal(result.evidence.length, 1);
     assert.equal(result.evidence[0].evidence.itemId, "last");
     await fs.appendFile(
@@ -231,4 +233,24 @@ test("existing terminal recovery requires exact pane/process/UTC start and a sta
     db.close();
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test('bounded initial scan retains artifacts before the final window and rebuilds old tail-only caches', async () => {
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'shelf-full-history-')));
+  const transcript=path.join(root,'S.jsonl'),identity={sessionId:'S',transcript};
+  try {
+    const artifact=path.join(root,'earlier.html');
+    await fs.writeFile(transcript,line(declaration('early',artifact))+Array.from({length:60},()=>line({type:'system',padding:'x'.repeat(90)})).join(''));
+    let result=await readClaudeTail(identity,root,null,{window:1024});
+    const first=result.cache.offset;
+    assert.ok(first<=1024,'first scan must start at beginning and remain bounded');
+    for(let i=0;result.loading&&i<100;i++)result=await readClaudeTail(identity,root,result.cache,{window:1024});
+    assert.equal(result.loading,false);
+    assert.deepEqual(result.evidence.map(x=>x.path),[artifact]);
+    assert.equal(result.coverage,'complete');
+    const legacy={...result.cache,startOffset:3000,evidence:{}};delete legacy.readerVersion;
+    result=await readClaudeTail(identity,root,legacy,{window:1024});
+    for(let i=0;result.loading&&i<100;i++)result=await readClaudeTail(identity,root,result.cache,{window:1024});
+    assert.deepEqual(result.evidence.map(x=>x.path),[artifact]);
+  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

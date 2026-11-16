@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Index existing Claude terminal histories from the beginning in bounded batches, so older artifact writes remain discoverable in long sessions.
+- Automatically rebuild legacy tail-only caches; subsequent reads remain incremental.
+- Keep workspace-boundary and successful-write verification unchanged.
+
 ## 0.1.0
 
 Initial public macOS release.

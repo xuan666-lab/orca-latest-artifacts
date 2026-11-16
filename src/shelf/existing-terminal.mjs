@@ -186,7 +186,8 @@ export async function readClaudeTail(
     const stat = await handle.stat(),
       fileId = stat.dev + ":" + stat.ino;
     let cache =
-      previous?.fileId === fileId && previous.offset <= stat.size
+      previous?.readerVersion === 2 && previous.startOffset === 0 &&
+      previous.fileId === fileId && previous.offset <= stat.size
         ? structuredClone(previous)
         : null;
     if (cache && cache.offset > 0) {
@@ -199,12 +200,13 @@ export async function readClaudeTail(
       cache = null;
     if (!cache)
       cache = {
+        readerVersion: 2,
         fileId,
-        offset: Math.max(0, stat.size - (options.window || WINDOW)),
-        skipFirst: stat.size > (options.window || WINDOW),
+        offset: 0,
+        skipFirst: false,
         pending: {},
         evidence: {},
-        startOffset: Math.max(0, stat.size - (options.window || WINDOW)),
+        startOffset: 0,
       };
     const available = Math.min(
       options.window || WINDOW,
