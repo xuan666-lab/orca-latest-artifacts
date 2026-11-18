@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- Works with Orca 1.4.261+, which moved Chat sessions to a new database. New Chats showed "unsupported session/provider/record version" and an empty list; they now list their artifacts. Chats from older Orca builds are still read from the old database.
+- A session Orca has no record of now says so instead of blaming an unsupported version.
+
 ## 0.1.4
 
 - Opening an artifact (or a browser tab) in the same workspace keeps the session's list instead of emptying it with a "not a native Chat" warning. Tabs from another workspace, or focus that cannot be verified, still clear it.
