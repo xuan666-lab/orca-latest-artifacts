@@ -1,4 +1,4 @@
-import { finalTurnDelivery } from "./native-delivery.mjs";
+import { finalTurnDelivery, messageDelivery } from "./native-delivery.mjs";
 /** Version-gated, read-only adapter. It never returns or persists conversation text. */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -31,6 +31,17 @@ const JOURNAL_TABLES = {
   ],
 };
 
+// Orca 1.4.261+ keeps Chat sessions here; the journal DB above holds sessions from older builds.
+const DOMAIN_TABLES = {
+  agent_session_records: ["session_id", "record_json"],
+  agent_session_tabs: ["tab_id", "session_id"],
+  journal_chat_state: ["session_id", "epoch", "last_sequence"],
+  journal_items: [
+    "session_id", "epoch", "item_id", "sequence", "sequence_index", "ordinal",
+    "hidden", "kind", "message_role", "turn_item_id", "producer_agent_id", "payload_json",
+  ],
+};
+
 export async function profilePaths(
   base = process.env.ORCA_ARTIFACT_ORCA_HOME ||
     path.join(os.homedir(), "Library/Application Support/orca"),
@@ -52,6 +63,7 @@ export async function profilePaths(
       "profile-state.db",
     ),
     journal: path.join(base, "agent-session-journal.db"),
+    domain: path.join(base, "agent-session-domain.db"),
   };
 }
 
@@ -83,6 +95,21 @@ async function database(file, version, tables, fn) {
   } finally {
     db.close();
   }
+}
+
+/** Run fn against the DB that holds this session: the new domain DB first, else the old journal. */
+async function sessionDb(paths, id, fn) {
+  const exists = (file) => fs.stat(file).then(() => true, () => false);
+  if (paths.domain && (await exists(paths.domain))) {
+    const found = await database(paths.domain, 2, DOMAIN_TABLES, (db) =>
+      db.prepare("SELECT 1 FROM agent_session_records WHERE session_id=?").get(id)
+        ? { value: fn(db, "domain") }
+        : null,
+    );
+    if (found) return found.value;
+  }
+  if (!(await exists(paths.journal))) throw Error("Orca 里找不到这个会话记录");
+  return database(paths.journal, 4, JOURNAL_TABLES, (db) => fn(db, "journal"));
 }
 
 export async function currentCandidate(paths) {
@@ -234,8 +261,8 @@ function sessionRecord(db, id, expected) {
     FROM agent_session_records WHERE session_id=?`,
     )
     .get(id);
+  if (!row) throw Error("Orca 里找不到这个会话记录");
   if (
-    !row ||
     row.schemaVersion !== 2 ||
     row.id !== id ||
     row.host !== "local" ||
@@ -266,9 +293,7 @@ function sessionRecord(db, id, expected) {
 }
 
 export async function verifySession(paths, id, workspaces, expected) {
-  const session = await database(paths.journal, 4, JOURNAL_TABLES, (db) =>
-    sessionRecord(db, id, expected),
-  );
+  const session = await sessionDb(paths, id, (db) => sessionRecord(db, id, expected));
   const workspace = workspaces.find(
     (w) => w.id === session.workspaceId && (!w.hostId || w.hostId === "local"),
   );
@@ -447,8 +472,9 @@ function extract(db, generation, key, row, provider) {
 }
 
 export async function readEvidence(paths, session, previous) {
-  return database(paths.journal, 4, JOURNAL_TABLES, (db) => {
+  return sessionDb(paths, session.id, (db, source) => {
     sessionRecord(db, session.id, { workspaceId: session.workspaceId });
+    if (source === "domain") return domainEvidence(db, session, previous);
     const epoch = db
       .prepare(
         "SELECT epoch,generation,format,through_seq,prefix_seq FROM journal_outcome_epochs WHERE session_id=?",
@@ -521,45 +547,7 @@ export async function readEvidence(paths, session, previous) {
       delete entries[key];
       if (row && !row.deleted) {
         const found = extract(db, epoch.generation, key, row, session.provider);
-        const scoped = found.flatMap((proof) => {
-          if (
-            typeof proof.path !== "string" ||
-            !path.isAbsolute(session.projectPath || "")
-          )
-            return [];
-          const file = path.resolve(session.projectPath, proof.path),
-            relative = path.relative(session.projectPath, file);
-          if (
-            !relative ||
-            relative.startsWith(".." + path.sep) ||
-            relative === ".." ||
-            path.isAbsolute(relative)
-          )
-            return [];
-          if (
-            relative
-              .split(path.sep)
-              .some(
-                (n) =>
-                  n.startsWith(".") ||
-                  [
-                    "node_modules",
-                    "warehouse",
-                    "venv",
-                    "cache",
-                    "__pycache__",
-                  ].includes(n),
-              )
-          )
-            return [];
-          if (
-            !/\.(html?|png|jpe?g|webp|gif|pdf|mp4|mov|webm|m4v|md|markdown|xlsx?|csv)$/i.test(
-              file,
-            )
-          )
-            return [];
-          return [{ ...proof, path: file }];
-        });
+        const scoped = inProject(found, session.projectPath);
         if (scoped.length) entries[key] = scoped;
       }
     }
@@ -613,7 +601,120 @@ export async function readEvidence(paths, session, previous) {
 }
 
 export async function sessionMetadata(paths, id) {
-  return database(paths.journal, 4, JOURNAL_TABLES, (db) =>
-    sessionRecord(db, id),
+  return sessionDb(paths, id, (db) => sessionRecord(db, id));
+}
+
+const ARTIFACT = /\.(html?|png|jpe?g|webp|gif|pdf|mp4|mov|webm|m4v|md|markdown|xlsx?|csv)$/i;
+const SKIPPED = ["node_modules", "warehouse", "venv", "cache", "__pycache__"];
+/** Keep artifact-type files inside the project, outside hidden and generated folders. */
+function inProject(found, projectPath) {
+  return found.flatMap((proof) => {
+    if (typeof proof.path !== "string" || !path.isAbsolute(projectPath || ""))
+      return [];
+    const file = path.resolve(projectPath, proof.path),
+      relative = path.relative(projectPath, file);
+    if (!relative || relative.startsWith(".." + path.sep) || relative === ".." || path.isAbsolute(relative))
+      return [];
+    if (relative.split(path.sep).some((n) => n.startsWith(".") || SKIPPED.includes(n)))
+      return [];
+    if (!ARTIFACT.test(file)) return [];
+    return [{ ...proof, path: file }];
+  });
+}
+
+/** Files one tool-call/diff item wrote, from an Orca 1.4.261+ journal_items row. */
+function domainWrites(row, provider) {
+  if (provider === "claude") {
+    if (
+      row.kind !== "tool-call" ||
+      row.state !== "completed" ||
+      !(row.exitCode === null || row.exitCode === 0) ||
+      !["Write", "Edit", "MultiEdit"].includes(row.name) ||
+      typeof row.filePath !== "string"
+    )
+      return [];
+    // Write can overwrite an existing file. Claim creation only with Claude's explicit result.
+    const created = row.name === "Write" && typeof row.head === "string"
+      && row.head.trim().startsWith(`File created successfully at: ${row.filePath}`);
+    return [{ path: row.filePath, evidence: evidence(row, created ? "created" : "modified") }];
+  }
+  if (provider !== "codex") return [];
+  if (row.kind === "tool-call" && row.name === "apply_patch" && row.state === "completed") {
+    let changes;
+    try { changes = JSON.parse(row.changes); } catch { return []; }
+    if (!Array.isArray(changes) || changes.length > 100) return [];
+    return changes
+      .map((c) => ({ path: c?.path, kind: c?.kind?.type ?? c?.kind }))
+      .filter((c) => typeof c.path === "string" && c.kind !== "delete")
+      .map((c) => ({ path: c.path, evidence: evidence(row, c.kind === "add" ? "created" : "modified") }));
+  }
+  if (row.kind !== "diff" || typeof row.path !== "string") return [];
+  const multiple = row.path.match(/^(\d+) files$/);
+  if (!multiple) return [{ path: row.path, evidence: evidence(row, "modified") }];
+  // A multi-file diff names its files only in complete patch headers.
+  if (row.patchTruncated) return [];
+  const parsed = patchPaths(row.patch);
+  if (parsed.length !== Number(multiple[1])) return [];
+  return parsed.map((c) => ({ path: c.path, evidence: evidence(row, c.relation) }));
+}
+
+const ITEM = `session_id=? AND epoch=? AND hidden=0 AND producer_agent_id IS NULL
+  AND json_extract(payload_json,'$.producerKind') IS NULL`;
+
+/** Evidence from Orca 1.4.261+ (journal_items). Rescans the session whenever its last sequence moves. */
+function domainEvidence(db, session, previous) {
+  const state = db
+    .prepare("SELECT epoch,last_sequence FROM journal_chat_state WHERE session_id=?")
+    .get(session.id);
+  if (!state?.epoch)
+    return { status: "ok", turns: [], cache: { entries: {}, through: 0, generation: null }, evidence: [] };
+  if (
+    previous?.readerVersion === "domain-1" &&
+    previous.epoch === state.epoch &&
+    previous.through === state.last_sequence
+  )
+    return { status: "ok", cache: previous, turns: previous.turns, evidence: previous.evidence };
+  const scope = [session.id, state.epoch];
+  const rows = db
+    .prepare(
+      `SELECT item_id itemId,turn_item_id turnItemId,kind,sequence,
+      json_extract(payload_json,'$.observedAt') observedAt,json_extract(payload_json,'$.body.name') name,
+      json_extract(payload_json,'$.body.callId') callId,json_extract(payload_json,'$.body.state') state,
+      json_extract(payload_json,'$.body.exitCode') exitCode,json_extract(payload_json,'$.body.input.file_path') filePath,
+      substr(json_extract(payload_json,'$.body.output.head'),1,8192) head,json_extract(payload_json,'$.body.input.changes') changes,
+      json_extract(payload_json,'$.body.path') path,json_extract(payload_json,'$.body.patch.truncated') patchTruncated,
+      CASE WHEN json_extract(payload_json,'$.body.patch.byteLength')<=262144 THEN json_extract(payload_json,'$.body.patch.head') END patch
+      FROM journal_items WHERE ${ITEM} AND kind IN ('tool-call','diff') ORDER BY sequence`,
+    )
+    .all(...scope);
+  const writes = rows.flatMap((row) => inProject(domainWrites(row, session.provider), session.projectPath));
+  const turns = db
+    .prepare(
+      `SELECT item_id id,sequence,json_extract(payload_json,'$.body.state') state,
+      json_extract(payload_json,'$.body.outcome') outcome,
+      COALESCE(json_extract(payload_json,'$.body.startedAt'),json_extract(payload_json,'$.observedAt')) startedAt
+      FROM journal_items WHERE ${ITEM} AND kind='turn' ORDER BY sequence`,
+    )
+    .all(...scope);
+  const finalMessage = db.prepare(
+    `SELECT sequence,CASE WHEN length(payload_json)<=524288 THEN payload_json END payload
+    FROM journal_items WHERE ${ITEM} AND kind='message' AND message_role='assistant' AND turn_item_id=?
+    ORDER BY sequence DESC,sequence_index DESC,ordinal DESC LIMIT 1`,
   );
+  const delivered = turns
+    .filter((t) => t.state === "completed" && t.outcome === "success")
+    .flatMap((turn) => {
+      const row = finalMessage.get(...scope, turn.id);
+      if (!row?.payload) return [];
+      const written = writes.filter((w) => w.evidence.turnItemId === turn.id).map((w) => w.path);
+      return messageDelivery(JSON.parse(row.payload), turn.id, turn.startedAt, session.projectPath, written, row.sequence);
+    });
+  const cache = {
+    readerVersion: "domain-1",
+    epoch: state.epoch,
+    through: state.last_sequence,
+    turns: turns.map(({ id, sequence, state, outcome }) => ({ id, sequence, state, outcome })),
+    evidence: [...writes, ...delivered],
+  };
+  return { status: "ok", cache, turns: cache.turns, evidence: cache.evidence };
 }

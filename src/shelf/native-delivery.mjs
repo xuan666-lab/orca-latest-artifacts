@@ -80,9 +80,15 @@ export function finalTurnDelivery(db, generation, turnId, through, project, writ
     row.value_json.length > 524288
   )
     return [];
-  const value = JSON.parse(row.value_json);
-  if (value.agentId || value.producerKind || value.body.truncated) return [];
-  const blocks = value.body.blocks;
+  const started = db
+    .prepare("SELECT MIN(json_extract(value_json,'$.observedAt')) t FROM journal_outcomes WHERE generation=? AND field='items' AND entry_key=? AND seq<=?")
+    .get(generation, JSON.stringify(turnId), through)?.t;
+  return messageDelivery(JSON.parse(row.value_json), turnId, started, project, written, row.seq);
+}
+/** Files the turn's final assistant message hands over; `value` is an Orca item payload. */
+export function messageDelivery(value, turnId, started, project, written = [], fallbackSequence) {
+  if (value.agentId || value.producerKind || value.body?.truncated) return [];
+  const blocks = value.body?.blocks;
   if (
     !Array.isArray(blocks) ||
     blocks.some((b) => b.truncated || b.text?.truncated)
@@ -92,10 +98,7 @@ export function finalTurnDelivery(db, generation, turnId, through, project, writ
     .filter((b) => b.type === "text" && typeof b.text === "string")
     .map((b) => b.text)
     .join("\n");
-  const tokens = mentionTokens(text),
-    started = db
-      .prepare("SELECT MIN(json_extract(value_json,'$.observedAt')) t FROM journal_outcomes WHERE generation=? AND field='items' AND entry_key=? AND seq<=?")
-      .get(generation, JSON.stringify(turnId), through)?.t;
+  const tokens = mentionTokens(text);
   return [...new Set([
     ...changedMentions(tokens, project, time(started)),
     ...written.filter((file) => mentionsFile(tokens, file)),
@@ -106,7 +109,7 @@ export function finalTurnDelivery(db, generation, turnId, through, project, writ
       relation: "delivered",
       itemId: value.itemId,
       turnItemId: turnId,
-      sequence: value.sequence ?? row.seq,
+      sequence: value.sequence ?? fallbackSequence,
       observedAt: value.observedAt,
     },
   }));
